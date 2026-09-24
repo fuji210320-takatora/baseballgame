@@ -569,7 +569,7 @@ elif st.session_state.screen == "draft_batter":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 9:
-        st.success("野手9人が揃えました！")
+        st.success("野手9人が揃いました！")
         if st.button("投手の獲得へ進む", use_container_width=True, type="primary"):
             change_screen("draft_pitcher")
     else:
@@ -665,11 +665,11 @@ elif st.session_state.screen == "setup":
     st.session_state.team_name = st.text_input("チーム名", value=st.session_state.team_name, max_chars=12)
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
     
-    # 初回初期化：打順1〜9を被りなく割り振り、守備位置も捕手〜右翼手等を被りなく割り振る
+    # 初期化：打順を1〜9に綺麗に分散させ、守備位置も被りなく割り振る
     for idx, b in enumerate(st.session_state.my_batters):
-        if not hasattr(b, 'temp_order') or b.temp_order is None:
+        if not hasattr(b, 'temp_order') or b.temp_order is None or b.temp_order < 1:
             b.temp_order = idx + 1
-        if not hasattr(b, 'temp_position') or b.temp_position is None:
+        if not hasattr(b, 'temp_position') or not b.temp_position:
             b.temp_position = positions_list[idx % len(positions_list)]
             b.position = b.temp_position
 
@@ -679,11 +679,11 @@ elif st.session_state.screen == "setup":
         with st.container(border=True):
             col_ord, col_card = st.columns([1, 4])
             with col_ord:
+                current_order_idx = clamp(batter.temp_order - 1, 0, 8)
                 new_order = st.selectbox(
-                    "打順選択", range(1, 10), index=batter.temp_order - 1, 
-                    key=f"order_sel_{batter.name}", label_visibility="collapsed"
+                    "打順選択", range(1, 10), index=current_order_idx, 
+                    key=f"order_sel_{i}_{batter.name}", label_visibility="collapsed"
                 )
-                # 打順が変更された場合、他の選手とスワップ（入れ替え）する処理
                 if new_order != batter.temp_order:
                     for other_b in st.session_state.my_batters:
                         if other_b != batter and other_b.temp_order == new_order:
@@ -696,10 +696,11 @@ elif st.session_state.screen == "setup":
                 try:
                     pos_idx = positions_list.index(batter.temp_position)
                 except ValueError:
-                    pos_idx = 0
+                    pos_idx = i % len(positions_list)
+                
                 new_pos = st.selectbox(
                     "守備位置選択", positions_list, index=pos_idx, 
-                    label_visibility="collapsed", key=f"pos_{batter.name}"
+                    label_visibility="collapsed", key=f"pos_{i}_{batter.name}"
                 )
                 batter.temp_position = new_pos
                 batter.position = new_pos
