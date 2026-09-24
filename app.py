@@ -163,9 +163,10 @@ class GameState:
     outs: int = 0
     runs: int = 0
 
-def advance_runners(state, bases_to_advance):
+def advance_runners(state, batter, bases_to_advance):
     old_bases = state.bases[:]
     state.bases = [None, None, None]
+    scored_count = 0
     for base_index in range(2, -1, -1):
         runner = old_bases[base_index]
         if runner is None:
@@ -173,52 +174,68 @@ def advance_runners(state, bases_to_advance):
         new_base = base_index + bases_to_advance
         if new_base >= 3:
             state.runs += 1
+            scored_count += 1
             runner.stats["runs"] += 1
         else:
             state.bases[new_base] = runner
+    
+    # 打点（RBI）の加算
+    batter.stats["rbis"] += scored_count
+    return scored_count
 
 def handle_hit(state, batter, result):
     if result == "single":
-        advance_runners(state, 1)
+        advance_runners(state, batter, 1)
         state.bases[0] = batter
         batter.stats["hits"] += 1
         batter.stats["singles"] += 1
     elif result == "double":
-        advance_runners(state, 2)
+        advance_runners(state, batter, 2)
         state.bases[1] = batter
         batter.stats["hits"] += 1
         batter.stats["doubles"] += 1
     elif result == "triple":
-        advance_runners(state, 3)
+        advance_runners(state, batter, 3)
         state.bases[2] = batter
         batter.stats["hits"] += 1
         batter.stats["triples"] += 1
     elif result == "homerun":
+        scored_count = 0
         for i in range(3):
             runner = state.bases[i]
             if runner is not None:
                 state.runs += 1
+                scored_count += 1
                 runner.stats["runs"] += 1
         state.bases = [None, None, None]
         state.runs += 1
+        scored_count += 1 # 自分自身のホームラン
+        
         batter.stats["hits"] += 1
         batter.stats["homeruns"] += 1
         batter.stats["runs"] += 1
+        batter.stats["rbis"] += scored_count
 
 def handle_walk(state, batter):
     batter.stats["walks"] += 1
+    scored_count = 0
     if state.bases[0] is not None:
         if state.bases[1] is not None:
             if state.bases[2] is not None:
                 runner = state.bases[2]
                 if runner:
                     runner.stats["runs"] += 1
+                    scored_count += 1
                 state.runs += 1
                 state.bases[2] = state.bases[1]
             state.bases[1] = state.bases[0]
         state.bases[0] = batter
     else:
         state.bases[0] = batter
+    
+    # 押し出しによる打点
+    if scored_count > 0:
+        batter.stats["rbis"] += scored_count
 
 def play_half_inning(batting_team, pitcher, batting_index):
     state = GameState()
@@ -591,7 +608,7 @@ elif st.session_state.screen == "draft_batter":
                 st.session_state.pool_idx += 1
                 st.rerun()
 
-# --- ③ 投手を獲得（括弧を排除したすっきりした表示に修正） ---
+# --- ③ 投手を獲得 ---
 elif st.session_state.screen == "draft_pitcher":
     st.markdown(draft_button_css, unsafe_allow_html=True)
     c_count = len(st.session_state.my_pitchers)
@@ -615,7 +632,6 @@ elif st.session_state.screen == "draft_pitcher":
         c_grade, c_cls = val_to_grade(player.control)
         s_grade, s_cls = val_to_grade(player.stamina)
         
-        # ［］を外して "球種 ランク" の形に整形
         bb_text = " / ".join([f"{k} {v}" for k, v in player.breaking_balls.items()]) if player.breaking_balls else "なし"
         
         html_card = f"""
