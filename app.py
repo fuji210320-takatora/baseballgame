@@ -256,7 +256,7 @@ def play_half_inning(batting_team, pitcher, batting_index):
     return state.runs, batting_index
 
 # =========================================================
-# 5つの起用方法に連動した投手マネジメント（継投ロジック）
+# 投手マネジメント（継投ロジック）
 # =========================================================
 class PitcherManager:
     def __init__(self, team):
@@ -279,11 +279,9 @@ class PitcherManager:
     def get_pitcher(self, inning, my_score, opp_score):
         score_diff = my_score - opp_score
         
-        # 先発のスタミナ限界目安
         starter_limit = max(3, int(self.current_pitcher.stamina / 14))
         is_tired = (self.current_pitcher.pitcher_role == "先発" and self.innings_pitched_by_current >= starter_limit)
         
-        # 継投判断：スタミナが切れた、または先発で6回以降のときのみ交代考慮
         should_change = is_tired or (self.current_pitcher.pitcher_role == "先発" and inning >= 6)
         
         if should_change:
@@ -423,15 +421,32 @@ def load_pool_players():
                 contact=row['ミート'], power=row['パワー'],
                 speed=row['走力'], defense_str=str(row['守備力'])
             ))
+            
         df_p = pd.read_excel("投手能力データ_最新.xlsx")
         for _, row in df_p.iterrows():
-            bb = {"スライダー": "B", "フォーク": "C"}
+            # Excelから変化球データを取得（「変化球」または「球種」列を想定、パース処理）
+            bb = {}
+            raw_bb = row.get('変化球', row.get('球種', ''))
+            if isinstance(raw_bb, str) and raw_bb.strip():
+                # 例: "スライダー:B, フォーク:C" のような形式やスペース区切りを辞書化する簡易パース
+                parts = raw_bb.replace('，', ',').split(',')
+                for p in parts:
+                    if ':' in p:
+                        k, v = p.split(':', 1)
+                        bb[k.strip()] = v.strip()
+                    elif ' ' in p:
+                        k, v = p.split(' ', 1)
+                        bb[k.strip()] = v.strip()
+            elif isinstance(raw_bb, dict):
+                bb = raw_bb
+
             pitchers.append(Pitcher(
                 name=row['選手名'], team=row['チーム'],
                 control=row['制球'], stamina=row['スタミナ'],
                 breaking_balls=bb
             ))
-    except Exception:
+    except Exception as e:
+        # Excelファイルがない場合のフォールバック（自動生成ダミーデータ）
         family_names = ["佐藤", "鈴木", "高橋", "田中", "伊藤", "渡辺", "山本", "中村", "小林", "加藤", "吉田", "山田", "佐々木", "山口", "松本"]
         first_names = ["翔", "大輝", "蓮", "陽翔", "樹", "湊", "新", "朝陽", "悠真", "律", "結衣", "陽葵", "澪", "紬", "芽依"]
         teams = ["東京", "大阪", "名古屋", "福岡", "札幌", "仙台"]
@@ -447,7 +462,6 @@ def load_pool_players():
             ))
         for i in range(80):
             name = f"{random.choice(family_names)}{random.choice(first_names)}"
-            # ランダムな変化球データを自動生成
             bb_types = ["スライダー", "カーブ", "フォーク", "シュート", "チェンジアップ", "カットボール"]
             bb_grades = ["S", "A", "B", "C", "D"]
             bb = {}
@@ -580,7 +594,7 @@ elif st.session_state.screen == "draft_batter":
                 st.session_state.pool_idx += 1
                 st.rerun()
 
-# --- ③ 投手を獲得（変化球の表示を追加） ---
+# --- ③ 投手を獲得 ---
 elif st.session_state.screen == "draft_pitcher":
     st.markdown(draft_button_css, unsafe_allow_html=True)
     c_count = len(st.session_state.my_pitchers)
@@ -596,7 +610,7 @@ elif st.session_state.screen == "draft_pitcher":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 15:
-        st.success("投手15人が揃いました！")
+        st.success("投手15人が揃えました！")
         if st.button("シーズン準備へ進む", use_container_width=True, type="primary"):
             change_screen("setup")
     else:
@@ -604,7 +618,6 @@ elif st.session_state.screen == "draft_pitcher":
         c_grade, c_cls = val_to_grade(player.control)
         s_grade, s_cls = val_to_grade(player.stamina)
         
-        # 変化球リストをテキスト化して分かりやすく表示
         bb_text = " / ".join([f"{k} [{v}]" for k, v in player.breaking_balls.items()]) if player.breaking_balls else "なし"
         
         html_card = f"""
