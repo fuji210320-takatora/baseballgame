@@ -128,7 +128,7 @@ def change_screen(new_screen):
 # 3. 画面描画ロジック
 # ==========================================
 
-# ドラフト画面専用ボタンCSS（取る・見送るボタンを大きくする）
+# ドラフト画面専用ボタンCSS（取る・見送るボタンを大きく色付けする）
 draft_button_css = """
 <style>
 div[data-testid="column"]:nth-of-type(1) button {
@@ -138,31 +138,6 @@ div[data-testid="column"]:nth-of-type(1) button {
 div[data-testid="column"]:nth-of-type(2) button {
     background-color: #2a6642 !important; color: white !important;
     height: 60px !important; font-size: 18px !important; font-weight: bold !important; border-radius: 8px !important; border: none !important;
-}
-</style>
-"""
-
-# セットアップ画面専用CSS（スマホでも横並びを維持し、△▽ボタンを小さくする）
-setup_css = """
-<style>
-@media (max-width: 768px) {
-    div[data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
-    }
-}
-div[data-testid="column"]:nth-of-type(1) {
-    min-width: 50px !important;
-    max-width: 70px !important;
-    margin-right: 12px !important;
-}
-div[data-testid="column"]:nth-of-type(1) button {
-    min-height: 36px !important;
-    height: 36px !important;
-    padding: 0 !important;
-    background-color: white !important;
-    color: #333 !important;
-    border: 1px solid #ddd !important;
-    border-radius: 6px !important;
 }
 </style>
 """
@@ -302,7 +277,17 @@ elif st.session_state.screen == "draft_pitcher":
 
 # --- ④ シーズン開始前 (打順・起用法セットアップ) ---
 elif st.session_state.screen == "setup":
-    st.markdown(setup_css, unsafe_allow_html=True)
+    # 枠内のボタン（△▽）の余白を消してコンパクトにするCSS
+    st.markdown("""
+    <style>
+    button[kind="secondary"] {
+        padding: 0px !important;
+        min-height: 36px !important;
+        height: 36px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-bottom: 24px;'>打順・守備位置</h2>", unsafe_allow_html=True)
     
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
@@ -310,6 +295,7 @@ elif st.session_state.screen == "setup":
     # 野手の打順設定
     for i, batter in enumerate(st.session_state.my_batters):
         with st.container(border=True):
+            # 左カラム(20%) に△・打順・▽を、右カラム(80%) に名前・守備を配置
             col_btn, col_card = st.columns([2, 8])
             
             with col_btn:
@@ -321,8 +307,8 @@ elif st.session_state.screen == "setup":
                 else:
                     st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
                 
-                # 打順番号を中央に配置
-                st.markdown(f"<div style='text-align: center; font-size: 24px; font-weight: 900; margin: 8px 0; line-height: 1;'>{i+1}<span style='font-size:10px; display:block; font-weight: normal;'>番</span></div>", unsafe_allow_html=True)
+                # 打順番号
+                st.markdown(f"<div style='text-align: center; font-size: 24px; font-weight: bold; margin: 4px 0;'>{i+1}<span style='font-size:12px; display:block;'>番</span></div>", unsafe_allow_html=True)
                 
                 # 9番打者以外は「▽」を表示。9番打者はズレ防止の空枠
                 if i < len(st.session_state.my_batters) - 1:
@@ -334,7 +320,8 @@ elif st.session_state.screen == "setup":
 
             with col_card:
                 # 右側の名前とセレクトボックス
-                st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-top: 4px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 8px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
+                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True) # 高さ合わせ
+                st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 12px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
                 batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=i%9, label_visibility="collapsed", key=f"pos_{i}")
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
@@ -343,7 +330,7 @@ elif st.session_state.screen == "setup":
     # 投手の起用法設定
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         with st.container(border=True):
-            st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 8px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 12px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
             def_index = 0 if i < 6 else (4 if i == 14 else 1)
             pitcher.pitcher_role = st.selectbox(f"{pitcher.name}の起用法", roles_list, index=def_index, label_visibility="collapsed", key=f"role_{i}")
 
