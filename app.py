@@ -567,12 +567,15 @@ def resolve_outcome(result, defense):
 
     ability = defender.defense_at(pos)
 
-    # 守備力0～100を捕球率へ。
-    catch_prob = 0.72 + ability / 400.0
-    catch_prob = clamp(catch_prob, 0.70, 0.98)
+    # 失策率を大幅に下げる。
+    # 143試合のシーズンで、1選手あたり概ね従来の1/12～1/8程度。
+    # 守備力が高いほど失策率は低くする。
+    base_error_prob = 0.0028
+    ability_factor = clamp((70.0 - ability) / 70.0, -0.35, 0.90)
+    error_prob = base_error_prob * (1.0 + ability_factor)
+    error_prob = clamp(error_prob, 0.0009, 0.0050)
 
-    # ごく低確率の失策。
-    if random.random() < catch_prob:
+    if random.random() >= error_prob:
         defender.fielding.PO += 1
         defender.fielding.UZR += (ability - 50.0) / 100.0
         return "field_out", pos, defender
