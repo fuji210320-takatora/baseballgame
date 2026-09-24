@@ -163,6 +163,26 @@ def change_screen(new_screen):
 # 3. シーズン結果シミュレーション処理
 # ==========================================
 def simulate_season():
+    # チーム全体の能力平均から勝敗・順位を決定
+    avg_meet = sum([b.meet for b in st.session_state.my_batters]) / 9
+    avg_control = sum([p.control for p in st.session_state.my_pitchers]) / 15
+    team_power = (avg_meet + avg_control) / 2
+    
+    base_wins = int(71 + (team_power - 60) * 1.5 + random.randint(-8, 8))
+    st.session_state.wins = max(35, min(108, base_wins))
+    st.session_state.losses = 143 - st.session_state.wins
+    st.session_state.win_rate = round(st.session_state.wins / 143, 3)
+
+    # 順位判定
+    wr = st.session_state.win_rate
+    if wr >= 0.58: st.session_state.rank = 1
+    elif wr >= 0.54: st.session_state.rank = 2
+    elif wr >= 0.50: st.session_state.rank = 3
+    elif wr >= 0.45: st.session_state.rank = 4
+    elif wr >= 0.40: st.session_state.rank = 5
+    else: st.session_state.rank = 6
+
+    # 野手成績
     for b in st.session_state.my_batters:
         base_avg = 0.210 + (b.meet / 100) * 0.130 + random.uniform(-0.03, 0.03)
         b.stats["打率"] = round(max(0.150, min(0.380, base_avg)), 3)
@@ -177,11 +197,11 @@ def simulate_season():
         b.stats["打点"] = int(b.stats["本塁打"] * 2.8 + random.randint(15, 35))
         b.stats["盗塁"] = int((b.speed / 100) * 25 + random.randint(0, 5))
 
+    # 投手成績
     for p in st.session_state.my_pitchers:
         base_era = 5.50 - (p.control / 100) * 3.0 + random.uniform(-0.6, 0.8)
         p.stats["防御率"] = round(max(1.10, min(7.50, base_era)), 2)
         
-        # 全てのキーを初期化してKeyErrorを防ぐ
         p.stats["勝利"] = 0
         p.stats["敗北"] = 0
         p.stats["セーブ"] = 0
@@ -384,7 +404,6 @@ elif st.session_state.screen == "setup":
             with col_card:
                 st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
                 
-                # 現在のポジションのインデックスを取得
                 try:
                     pos_idx = positions_list.index(batter.temp_position)
                 except ValueError:
@@ -416,10 +435,11 @@ elif st.session_state.screen == "setup":
         simulate_season()
         change_screen("result")
 
-# --- ⑤ シーズン結果 (個人成績表示) ---
+# --- ⑤ シーズン結果 (順位・個人成績表示) ---
 elif st.session_state.screen == "result":
     st.markdown(f"<h1 style='text-align: center;'>{st.session_state.team_name}</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center; color: #666;'>143試合 シーズン個人成績</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center; color: #b03535;'>最終順位： 第 {st.session_state.rank} 位</h2>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: #666;'>143試合成績： {st.session_state.wins}勝 {st.session_state.losses}敗 (勝率 .{int(st.session_state.win_rate*1000):03d})</p>", unsafe_allow_html=True)
     st.write("---")
     
     tab1, tab2 = st.tabs(["⚾ 野手成績", "投手成績"])
