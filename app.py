@@ -3,7 +3,7 @@ import pandas as pd
 import random
 
 # ==========================================
-# 0. カスタムCSSの定義（プルダウンを正方形にする設定含む）
+# 0. カスタムCSSの定義（強制的な左右分割と正方形デザイン）
 # ==========================================
 def inject_custom_css():
     st.markdown("""
@@ -47,36 +47,38 @@ def inject_custom_css():
     .status-left { font-size: 13px; color: #666; }
     .pass-pill { background: #fbebeb; color: #b03535; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: bold; border: 1px solid #fad4d4;}
 
-    /* 打順選択のセレクトボックスを強制的に正方形にするCSS */
+    /* 打順セレクトボックス（正方形化＆サイズ固定） */
     div[data-baseweb="select"] {
-        width: 50px !important;
-        height: 50px !important;
+        width: 56px !important;
+        height: 56px !important;
     }
     div[data-baseweb="select"] > div {
-        width: 50px !important;
-        height: 50px !important;
-        min-height: 50px !important;
+        width: 56px !important;
+        height: 56px !important;
+        min-height: 56px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        background-color: #f0f0f0 !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+        font-size: 18px !important;
     }
 
-    /* 左右レイアウトの強制維持 */
-    @media (max-width: 768px) {
-        div[data-testid="stHorizontalBlock"] {
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-        }
-        div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
-            flex: 0 0 65px !important;
-            width: 65px !important;
-            min-width: 65px !important;
-            margin-right: 12px !important;
-        }
-        div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {
-            flex: 1 1 auto !important;
-            width: calc(100% - 77px) !important;
-        }
+    /* 左右レイアウトの強制固定（画面幅によらず左カラムを狭く、右を広く） */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
+        flex: 0 0 70px !important;
+        width: 70px !important;
+        min-width: 70px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {
+        flex: 1 1 auto !important;
+        width: calc(100% - 70px) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -319,7 +321,7 @@ elif st.session_state.screen == "setup":
 
     for i, batter in enumerate(sorted_batters):
         with st.container(border=True):
-            col_ord, col_card = st.columns([2.5, 7.5])
+            col_ord, col_card = st.columns([1, 4])
             
             with col_ord:
                 new_order = st.selectbox(
