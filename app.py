@@ -3,7 +3,7 @@ import pandas as pd
 import random
 
 # ==========================================
-# 0. カスタムCSSの定義（全体共通 & 左右レイアウトの強制）
+# 0. カスタムCSSの定義（プルダウンを正方形にする設定含む）
 # ==========================================
 def inject_custom_css():
     st.markdown("""
@@ -47,21 +47,35 @@ def inject_custom_css():
     .status-left { font-size: 13px; color: #666; }
     .pass-pill { background: #fbebeb; color: #b03535; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: bold; border: 1px solid #fad4d4;}
 
-    /* スマホでも打順設定を確実に左右並びにするための強制CSS */
+    /* 打順選択のセレクトボックスを強制的に正方形にするCSS */
+    div[data-baseweb="select"] {
+        width: 50px !important;
+        height: 50px !important;
+    }
+    div[data-baseweb="select"] > div {
+        width: 50px !important;
+        height: 50px !important;
+        min-height: 50px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* 左右レイアウトの強制維持 */
     @media (max-width: 768px) {
         div[data-testid="stHorizontalBlock"] {
             flex-direction: row !important;
             flex-wrap: nowrap !important;
         }
         div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
-            flex: 0 0 90px !important;
-            width: 90px !important;
-            min-width: 90px !important;
+            flex: 0 0 65px !important;
+            width: 65px !important;
+            min-width: 65px !important;
             margin-right: 12px !important;
         }
         div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {
             flex: 1 1 auto !important;
-            width: calc(100% - 102px) !important;
+            width: calc(100% - 77px) !important;
         }
     }
     </style>
@@ -145,7 +159,6 @@ def change_screen(new_screen):
 # 3. 画面描画ロジック
 # ==========================================
 
-# ドラフト画面専用ボタンCSS
 draft_button_css = """
 <style>
 div[data-testid="column"]:nth-of-type(1) button {
@@ -298,7 +311,6 @@ elif st.session_state.screen == "setup":
     
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
     
-    # 初回アクセス時、各野手に1〜9番を順番に割り振る
     for idx, b in enumerate(st.session_state.my_batters):
         if not hasattr(b, 'temp_order') or b.temp_order is None:
             b.temp_order = idx + 1
@@ -307,11 +319,9 @@ elif st.session_state.screen == "setup":
 
     for i, batter in enumerate(sorted_batters):
         with st.container(border=True):
-            # 左側に打順プルダウン、右側に名前と守備位置
-            col_ord, col_card = st.columns([3, 7])
+            col_ord, col_card = st.columns([2.5, 7.5])
             
             with col_ord:
-                # label_visibility="collapsed" により「〇〇の打順」という文字を完全に消去
                 new_order = st.selectbox(
                     "打順選択", 
                     range(1, 10), 
