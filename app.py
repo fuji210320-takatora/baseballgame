@@ -41,25 +41,6 @@ def inject_custom_css():
     .grade-C { color: #d48a35; }
     .grade-D { color: #3a82c9; }
     .grade-E, .grade-F, .grade-G { color: #666; }
-
-    div[data-testid="column"]:nth-child(1) button {
-        background-color: #b03535 !important;
-        color: white !important;
-        border: none !important;
-        height: 60px;
-        font-size: 18px !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
-    }
-    div[data-testid="column"]:nth-child(2) button {
-        background-color: #2a6642 !important;
-        color: white !important;
-        border: none !important;
-        height: 60px;
-        font-size: 18px !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
-    }
     
     .status-bar { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #ddd; padding-bottom: 12px; margin-bottom: 16px;}
     .status-count { font-size: 24px; font-weight: bold; }
@@ -86,7 +67,6 @@ class Player:
         self.name = name
         self.team = team
         self.role = role
-        self.age = random.randint(18, 38) # 年齢のみダミー生成
 
 class Batter(Player):
     def __init__(self, name, team, meet, power, speed, defense):
@@ -154,22 +134,21 @@ if st.session_state.screen == "top":
     st.markdown("<h1 class='title-main'>野球チームメーカー</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; font-size: 14px; margin-bottom: 40px;'>ランダムに現れる選手を取捨選択して、<br>24人のチームを作れ！</p>", unsafe_allow_html=True)
     
-    st.markdown("""
-    <div class='rule-box'>
-        <div style='font-size: 12px; color: #666; margin-bottom: 8px;'>ルール</div>
-        <div class='rule-item'><span class='rule-num'>1</span>架空の選手がポジション関係なく完全ランダムで1人ずつ登場</div>
-        <div class='rule-item'><span class='rule-num'>2</span>できるのは「<b>取る</b>」か「<b>見送る</b>」だけ</div>
-        <div class='rule-item'><span class='rule-num'>3</span>まず<b>野手9人</b>（見送り5回まで）</div>
-        <div class='rule-item'><span class='rule-num'>4</span>つぎに<b>投手15人</b>（先発6人・救援9人をセットで選ぶ）</div>
-        <div class='rule-item'><span class='rule-num'>5</span>役割を決め、打順を組んで<b>143試合</b>を戦う</div>
-        <div class='rule-item'><span class='rule-num'>6</span>シーズン中は選手が急に伸びたり、不調に落ちたりする</div>
-    </div>
-    
-    <div class='disclaimer'>
-        本サイトは日本野球機構（NPB）・各球団・選手本人とは関係のない非公式のファンサイトです。選手名・成績・能力値はすべて本ゲームのための架空のもので、実在の選手とは関係ありません。
-    </div>
-    """, unsafe_allow_html=True)
-    
+    html_top = """
+<div class='rule-box'>
+<div style='font-size: 12px; color: #666; margin-bottom: 8px;'>ルール</div>
+<div class='rule-item'><span class='rule-num'>1</span>架空の選手がポジション関係なく完全ランダムで1人ずつ登場</div>
+<div class='rule-item'><span class='rule-num'>2</span>できるのは「<b>取る</b>」か「<b>見送る</b>」だけ</div>
+<div class='rule-item'><span class='rule-num'>3</span>まず<b>野手9人</b>（見送り5回まで）</div>
+<div class='rule-item'><span class='rule-num'>4</span>つぎに<b>投手15人</b>（先発6人・救援9人をセットで選ぶ）</div>
+<div class='rule-item'><span class='rule-num'>5</span>役割を決め、打順を組んで<b>143試合</b>を戦う</div>
+<div class='rule-item'><span class='rule-num'>6</span>シーズン中は選手が急に伸びたり、不調に落ちたりする</div>
+</div>
+<div class='disclaimer'>
+本サイトは日本野球機構（NPB）・各球団・選手本人とは関係のない非公式のファンサイトです。選手名・成績・能力値はすべて本ゲームのための架空のもので、実在の選手とは関係ありません。
+</div>
+"""
+    st.markdown(html_top, unsafe_allow_html=True)
     st.write("")
     if st.button("ゲーム開始", use_container_width=True, type="primary"):
         change_screen("draft_batter")
@@ -177,15 +156,16 @@ if st.session_state.screen == "top":
 # --- ② 野手を獲得 ---
 elif st.session_state.screen == "draft_batter":
     c_count = len(st.session_state.my_batters)
-    st.markdown(f"""
-    <div class='status-bar'>
-        <div>
-            <div style='font-size: 12px; font-weight: bold;'>野手を獲得</div>
-            <span class='status-count'>{c_count} / 9</span> <span class='status-left'>あと{9 - c_count}人</span>
-        </div>
-        <div class='pass-pill'>見送り残り：{st.session_state.b_passes}回</div>
-    </div>
-    """, unsafe_allow_html=True)
+    html_status = f"""
+<div class='status-bar'>
+<div>
+<div style='font-size: 12px; font-weight: bold;'>野手を獲得</div>
+<span class='status-count'>{c_count} / 9</span> <span class='status-left'>あと{9 - c_count}人</span>
+</div>
+<div class='pass-pill'>見送り残り：{st.session_state.b_passes}回</div>
+</div>
+"""
+    st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 9:
         st.success("野手9人が揃いました！")
@@ -197,31 +177,31 @@ elif st.session_state.screen == "draft_batter":
         p_grade, p_cls = val_to_grade(player.power)
         s_grade, s_cls = val_to_grade(player.speed)
         
-        st.markdown(f"""
-        <div class='player-card'>
-            <div class='player-pos-badge'>野手</div>
-            <h2 class='player-name'>{player.name}</h2>
-            <div class='player-sub'>{player.age}歳 <br>所属: {player.team}</div>
-            
-            <div class='attr-container'>
-                <div class='attr-box'><div class='attr-label'>ミート</div><div class='attr-grade {m_cls}'>{m_grade}</div><div class='attr-val'>{player.meet}</div></div>
-                <div class='attr-box'><div class='attr-label'>パワー</div><div class='attr-grade {p_cls}'>{p_grade}</div><div class='attr-val'>{player.power}</div></div>
-                <div class='attr-box'><div class='attr-label'>走力</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.speed}</div></div>
-            </div>
-            <div style='margin-top: 16px; font-size: 13px; color: #555; border-top: 1px dashed #ddd; padding-top: 12px;'>
-                守れる所： <b>{player.defense}</b>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        html_card = f"""
+<div class='player-card'>
+<div class='player-pos-badge'>野手</div>
+<h2 class='player-name'>{player.name}</h2>
+<div class='player-sub'>所属: {player.team}</div>
+<div class='attr-container'>
+<div class='attr-box'><div class='attr-label'>ミート</div><div class='attr-grade {m_cls}'>{m_grade}</div><div class='attr-val'>{player.meet}</div></div>
+<div class='attr-box'><div class='attr-label'>パワー</div><div class='attr-grade {p_cls}'>{p_grade}</div><div class='attr-val'>{player.power}</div></div>
+<div class='attr-box'><div class='attr-label'>走力</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.speed}</div></div>
+</div>
+<div style='margin-top: 16px; font-size: 13px; color: #555; border-top: 1px dashed #ddd; padding-top: 12px;'>
+守れる所： <b>{player.defense}</b>
+</div>
+</div>
+"""
+        st.markdown(html_card, unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button(f"見送る\n残り {st.session_state.b_passes} 回", use_container_width=True, disabled=(st.session_state.b_passes <= 0)):
+            if st.button(f"見送る (残り {st.session_state.b_passes} 回)", use_container_width=True, disabled=(st.session_state.b_passes <= 0)):
                 st.session_state.b_passes -= 1
                 st.session_state.pool_idx += 1
                 st.rerun()
         with col2:
-            if st.button(f"取る\nチームに加える", use_container_width=True):
+            if st.button("取る (チームに加える)", use_container_width=True, type="primary"):
                 st.session_state.my_batters.append(player)
                 st.session_state.pool_idx += 1
                 st.rerun()
@@ -229,15 +209,16 @@ elif st.session_state.screen == "draft_batter":
 # --- ③ 投手を獲得 ---
 elif st.session_state.screen == "draft_pitcher":
     c_count = len(st.session_state.my_pitchers)
-    st.markdown(f"""
-    <div class='status-bar'>
-        <div>
-            <div style='font-size: 12px; font-weight: bold;'>投手を獲得</div>
-            <span class='status-count'>{c_count} / 15</span> <span class='status-left'>あと{15 - c_count}人</span>
-        </div>
-        <div class='pass-pill'>見送り残り：{st.session_state.p_passes}回</div>
-    </div>
-    """, unsafe_allow_html=True)
+    html_status = f"""
+<div class='status-bar'>
+<div>
+<div style='font-size: 12px; font-weight: bold;'>投手を獲得</div>
+<span class='status-count'>{c_count} / 15</span> <span class='status-left'>あと{15 - c_count}人</span>
+</div>
+<div class='pass-pill'>見送り残り：{st.session_state.p_passes}回</div>
+</div>
+"""
+    st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 15:
         st.success("投手15人が揃いました！")
@@ -248,30 +229,30 @@ elif st.session_state.screen == "draft_pitcher":
         c_grade, c_cls = val_to_grade(player.control)
         s_grade, s_cls = val_to_grade(player.stamina)
         
-        st.markdown(f"""
-        <div class='player-card'>
-            <div class='player-pos-badge'>投手</div>
-            <h2 class='player-name'>{player.name}</h2>
-            <div class='player-sub'>{player.age}歳 <br>所属: {player.team}</div>
-            
-            <div class='attr-container'>
-                <div class='attr-box'><div class='attr-label'>制球</div><div class='attr-grade {c_cls}'>{c_grade}</div><div class='attr-val'>{player.control}</div></div>
-                <div class='attr-box'><div class='attr-label'>スタミナ</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.stamina}</div></div>
-            </div>
-            <div style='margin-top: 16px; font-size: 12px; color: #555; border-top: 1px dashed #ddd; padding-top: 12px; line-height: 1.5;'>
-                球種： <b>{player.pitches}</b>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        html_card = f"""
+<div class='player-card'>
+<div class='player-pos-badge'>投手</div>
+<h2 class='player-name'>{player.name}</h2>
+<div class='player-sub'>所属: {player.team}</div>
+<div class='attr-container'>
+<div class='attr-box'><div class='attr-label'>制球</div><div class='attr-grade {c_cls}'>{c_grade}</div><div class='attr-val'>{player.control}</div></div>
+<div class='attr-box'><div class='attr-label'>スタミナ</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.stamina}</div></div>
+</div>
+<div style='margin-top: 16px; font-size: 12px; color: #555; border-top: 1px dashed #ddd; padding-top: 12px; line-height: 1.5;'>
+球種： <b>{player.pitches}</b>
+</div>
+</div>
+"""
+        st.markdown(html_card, unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button(f"見送る\n残り {st.session_state.p_passes} 回", use_container_width=True, disabled=(st.session_state.p_passes <= 0)):
+            if st.button(f"見送る (残り {st.session_state.p_passes} 回)", use_container_width=True, disabled=(st.session_state.p_passes <= 0)):
                 st.session_state.p_passes -= 1
                 st.session_state.pool_idx += 1
                 st.rerun()
         with col2:
-            if st.button(f"取る\nチームに加える", use_container_width=True):
+            if st.button("取る (チームに加える)", use_container_width=True, type="primary"):
                 st.session_state.my_pitchers.append(player)
                 st.session_state.pool_idx += 1
                 st.rerun()
@@ -283,27 +264,29 @@ elif st.session_state.screen == "setup":
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
     
     for i, batter in enumerate(st.session_state.my_batters):
-        st.markdown(f"""
-        <div style='background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; align-items: center;'>
-            <div style='font-size: 24px; font-weight: 900; width: 40px; text-align: center; background: #f0f0f0; border-radius: 4px; padding: 8px 0; margin-right: 16px;'>{i+1}<span style='font-size:10px; display:block; font-weight: normal;'>番</span></div>
-            <div style='flex: 1;'>
-                <div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{batter.name}</div>
-                <div style='font-size: 11px; color: #888;'>{batter.age}歳</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        html_setup_b = f"""
+<div style='background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; align-items: center;'>
+<div style='font-size: 24px; font-weight: 900; width: 40px; text-align: center; background: #f0f0f0; border-radius: 4px; padding: 8px 0; margin-right: 16px;'>{i+1}<span style='font-size:10px; display:block; font-weight: normal;'>番</span></div>
+<div style='flex: 1;'>
+<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{batter.name}</div>
+<div style='font-size: 11px; color: #888;'>所属: {batter.team}</div>
+</div>
+</div>
+"""
+        st.markdown(html_setup_b, unsafe_allow_html=True)
         batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=i%9, label_visibility="collapsed", key=f"pos_{i}")
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
     roles_list = ["先発", "僅差", "ビハインド", "セットアッパー", "抑え"]
     
     for i, pitcher in enumerate(st.session_state.my_pitchers):
-        st.markdown(f"""
-        <div style='background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px;'>
-            <div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name}</div>
-            <div style='font-size: 11px; color: #888;'>{pitcher.age}歳</div>
-        </div>
-        """, unsafe_allow_html=True)
+        html_setup_p = f"""
+<div style='background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px;'>
+<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name}</div>
+<div style='font-size: 11px; color: #888;'>所属: {pitcher.team}</div>
+</div>
+"""
+        st.markdown(html_setup_p, unsafe_allow_html=True)
         def_index = 0 if i < 6 else (4 if i == 14 else 1)
         pitcher.pitcher_role = st.selectbox(f"{pitcher.name}の起用法", roles_list, index=def_index, label_visibility="collapsed", key=f"role_{i}")
 
