@@ -589,7 +589,7 @@ elif st.session_state.screen == "draft_pitcher":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 15:
-        st.success("投手15人が揃いました！")
+        st.success("投手15人が揃えました！")
         if st.button("シーズン準備へ進む", use_container_width=True, type="primary"):
             change_screen("setup")
     else:
@@ -678,11 +678,9 @@ elif st.session_state.screen == "setup":
 
     st.write("---")
     if st.button("🔥 開幕（143試合シミュレーション実行）", type="primary", use_container_width=True):
-        # チームオブジェクトの作成
         my_team = Team(name=st.session_state.team_name, batters=st.session_state.my_batters, pitchers=st.session_state.my_pitchers)
         
-        # 簡易的に対戦相手（CPUチーム）を生成
-        cpu_batters = [Batter(f"CPU野手{i}", "CPU", 70, 70, 70, 70) for i in range(1, 10)]
+        cpu_batters = [Batter(f"CPU野手{i}", "CPU", 70, 70, 70, 70, defense=60) for i in range(1, 10)]
         cpu_pitchers = [Pitcher(f"CPU投手{i}", "CPU", 70, 70, {"slider": "C"}) for i in range(1, 10)]
         cpu_team = Team(name="CPUライバルズ", batters=cpu_batters, pitchers=cpu_pitchers)
 
@@ -690,7 +688,6 @@ elif st.session_state.screen == "setup":
         for t in teams:
             t.reset_stats()
 
-        # 143試合の実行
         games_to_play = SEASON_GAMES
         for _ in range(games_to_play):
             play_game(my_team, cpu_team)
@@ -704,7 +701,6 @@ elif st.session_state.screen == "result":
     my_team = st.session_state.sim_my_team
     cpu_team = st.session_state.sim_cpu_team
     
-    # 順位判定
     all_teams = sorted([my_team, cpu_team], key=lambda t: (t.wins, t.runs_for - t.runs_against), reverse=True)
     my_rank = all_teams.index(my_team) + 1
 
