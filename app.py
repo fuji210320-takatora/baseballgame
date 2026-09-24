@@ -163,26 +163,7 @@ def change_screen(new_screen):
 # 3. シーズン結果シミュレーション処理
 # ==========================================
 def simulate_season():
-    # チーム全体の能力平均から勝敗・順位を決定
-    avg_meet = sum([b.meet for b in st.session_state.my_batters]) / 9
-    avg_control = sum([p.control for p in st.session_state.my_pitchers]) / 15
-    team_power = (avg_meet + avg_control) / 2
-    
-    base_wins = int(71 + (team_power - 60) * 1.5 + random.randint(-8, 8))
-    st.session_state.wins = max(35, min(108, base_wins))
-    st.session_state.losses = 143 - st.session_state.wins
-    st.session_state.win_rate = round(st.session_state.wins / 143, 3)
-
-    # 順位判定
-    wr = st.session_state.win_rate
-    if wr >= 0.58: st.session_state.rank = 1
-    elif wr >= 0.54: st.session_state.rank = 2
-    elif wr >= 0.50: st.session_state.rank = 3
-    elif wr >= 0.45: st.session_state.rank = 4
-    elif wr >= 0.40: st.session_state.rank = 5
-    else: st.session_state.rank = 6
-
-    # 野手成績
+    # 1. まず野手の成績を算出
     for b in st.session_state.my_batters:
         base_avg = 0.210 + (b.meet / 100) * 0.130 + random.uniform(-0.03, 0.03)
         b.stats["打率"] = round(max(0.150, min(0.380, base_avg)), 3)
@@ -197,7 +178,10 @@ def simulate_season():
         b.stats["打点"] = int(b.stats["本塁打"] * 2.8 + random.randint(15, 35))
         b.stats["盗塁"] = int((b.speed / 100) * 25 + random.randint(0, 5))
 
-    # 投手成績
+    # 2. 投手個人の勝敗・防御率等を先に計算し、その合計からチームの勝敗を決定する
+    total_wins = 0
+    total_losses = 0
+
     for p in st.session_state.my_pitchers:
         base_era = 5.50 - (p.control / 100) * 3.0 + random.uniform(-0.6, 0.8)
         p.stats["防御率"] = round(max(1.10, min(7.50, base_era)), 2)
@@ -207,16 +191,64 @@ def simulate_season():
         p.stats["セーブ"] = 0
         p.stats["ホールド"] = 0
 
+        # 起用法と能力値に応じて個人成績を算出
         if p.pitcher_role == "先発":
-            p.stats["勝利"] = int((p.stamina / 100) * 14 + random.randint(0, 5))
-            p.stats["敗北"] = int((100 - p.control) / 100 * 10 + random.randint(0, 4))
-            p.stats["投球回"] = int(p.stats["勝利"] * 12 + random.randint(80, 150))
+            w = int((p.control / 100) * 8 + (p.stamina / 100) * 6 + random.randint(0, 4))
+            l = int(((100 - p.control) / 100) * 8 + random.randint(0, 4))
+            p.stats["勝利"] = w
+            p.stats["敗北"] = l
+            p.stats["投球回"] = int((w + l) * 6 + random.randint(30, 80))
         elif p.pitcher_role == "抑え":
-            p.stats["セーブ"] = int((p.control / 100) * 32 + random.randint(0, 8))
+            sv = int((p.control / 100) * 25 + random.randint(0, 10))
+            l = int(random.randint(1, 4))
+            p.stats["セーブ"] = sv
+            p.stats["敗北"] = l
             p.stats["投球回"] = int(random.randint(45, 65))
+        elif p.pitcher_role == "セットアッパー":
+            hld = int((p.control / 100) * 20 + random.randint(0, 8))
+            w = int(random.randint(1, 4))
+            l = int(random.randint(1, 4))
+            p.stats["勝利"] = w
+            p.stats["敗北"] = l
+            p.stats["ホールド"] = hld
+            p.stats["投球回"] = int(random.randint(40, 60))
+        else: # 中継ぎ・僅差・ビハインドなど
+            w = int(random.randint(0, 3))
+            l = int(random.randint(0, 3))
+            hld = int(random.randint(0, 5))
+            p.stats["勝利"] = w
+            p.stats["敗北"] = l
+            p.stats["ホールド"] = hld
+            p.stats["投球回"] = int(random.randint(25, 55))
+
+        total_wins += p.stats["勝利"]
+        total_losses += p.stats["敗北"]
+
+    # 3. 投手陣の合計勝敗をベースに、引き分けなどを調整して143試合前後に合わせる
+    # （※野球の性質上、救援勝利などが絡み総勝利数と総敗北数が完全に同数にならない場合があるため、チームの総試合数が143に近くなるよう補正）
+    diff = 143 - (total_wins + total_losses)
+    if diff != 0 and len(st.session_state.my_pitchers) > 0:
+        # ランダムな投手1名に差分をプラスして143に合わせる
+        p_adj = random.choice(st.session_state.my_pitchers)
+        if diff > 0:
+            p_adj.stats["勝利"] += diff
+            total_wins += diff
         else:
-            p.stats["ホールド"] = int((p.control / 100) * 25 + random.randint(0, 10))
-            p.stats["投球回"] = int(random.randint(40, 70))
+            p_adj.stats["敗北"] += abs(diff)
+            total_losses += abs(diff)
+
+    st.session_state.wins = total_wins
+    st.session_state.losses = total_losses
+    st.session_state.win_rate = round(total_wins / (total_wins + total_losses) if (total_wins + total_losses) > 0 else 0.5, 3)
+
+    # 4. チームの総勝利数をもとに最終順位を決定
+    tw = st.session_state.wins
+    if tw >= 82: st.session_state.rank = 1
+    elif tw >= 77: st.session_state.rank = 2
+    elif tw >= 72: st.session_state.rank = 3
+    elif tw >= 65: st.session_state.rank = 4
+    elif tw >= 58: st.session_state.rank = 5
+    else: st.session_state.rank = 6
 
 # ==========================================
 # 4. 画面描画ロジック
