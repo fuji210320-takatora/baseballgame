@@ -4,13 +4,14 @@ import random
 
 # --- 1. データモデル（クラス）の定義 ---
 class Player:
-    def __init__(self, name, team):
+    def __init__(self, name, team, role):
         self.name = name
         self.team = team
+        self.role = role  # "野手" か "投手" かを文字列で持たせる
 
 class Batter(Player):
     def __init__(self, name, team, plate_appearances, meet, power, speed, defense):
-        super().__init__(name, team)
+        super().__init__(name, team, "野手")
         self.plate_appearances = plate_appearances
         self.meet = meet
         self.power = power
@@ -19,13 +20,13 @@ class Batter(Player):
 
 class Pitcher(Player):
     def __init__(self, name, team, control, stamina, pitches):
-        super().__init__(name, team)
+        super().__init__(name, team, "投手")
         self.control = control
         self.stamina = stamina
         self.pitches = pitches
 
 # --- 2. Excelファイルからのデータ読み込み ---
-@st.cache_data # 毎回Excelを読み込まないよう高速化
+# キャッシュがエラーの温床になるため @st.cache_data は外します
 def load_players():
     # 野手データの読み込み
     df_batter = pd.read_excel("野手能力データ_最新.xlsx")
@@ -58,23 +59,21 @@ def load_players():
 # --- 3. Streamlitでの画面構築と状態管理 ---
 st.title("野球チームメーカー（開発中）")
 
-# 初回のみ実行される初期化処理（ページをリロードしてもデータを保持する）
+# 初回のみ実行される初期化処理
 if "initialized" not in st.session_state:
     st.session_state.all_players = load_players()
-    random.shuffle(st.session_state.all_players) # 選手をシャッフル
+    random.shuffle(st.session_state.all_players) 
     st.session_state.my_team = []
     st.session_state.current_index = 0
     st.session_state.initialized = True
 
 target_roster_size = 24
 
-# 進行状況のチェック
 if len(st.session_state.my_team) >= target_roster_size:
-    # 24人集まった場合の画面
     st.success(f"チーム編成完了！ {target_roster_size}名の選手が集まりました。")
     st.subheader("【獲得選手一覧】")
     for p in st.session_state.my_team:
-        if isinstance(p, Batter):
+        if p.role == "野手":
             st.write(f"⚾ [野] {p.name} ({p.team})")
         else:
             st.write(f"⚾ [投] {p.name} ({p.team})")
@@ -83,14 +82,13 @@ elif st.session_state.current_index >= len(st.session_state.all_players):
     st.error("候補選手がいなくなりました。")
     
 else:
-    # ドラフト継続中の画面
     player = st.session_state.all_players[st.session_state.current_index]
     
     st.subheader("現在の候補選手")
     st.markdown(f"### **{player.name}** （{player.team}）")
     
-    # 選手の能力表示
-    if isinstance(player, Batter):
+    # role属性を使って野手か投手かを判定する（エラー回避）
+    if player.role == "野手":
         st.write("**[野手]**")
         st.write(f"ミート: **{player.meet}** | パワー: **{player.power}** | 走力: **{player.speed}**")
         st.write(f"守備: {player.defense}")
@@ -104,17 +102,14 @@ else:
 
     st.write("---")
     
-    # ボタンの配置
     col1, col2 = st.columns(2)
     with col1:
-        # 獲得ボタンが押されたらチームに追加し、次の選手へ
         if st.button("⭕ 獲得する", use_container_width=True):
             st.session_state.my_team.append(player)
             st.session_state.current_index += 1
-            st.rerun() # 画面を再読み込みして更新
+            st.rerun()
             
     with col2:
-        # 見送りボタンが押されたらチームには追加せず、次の選手へ
         if st.button("❌ 見送る", use_container_width=True):
             st.session_state.current_index += 1
             st.rerun()
