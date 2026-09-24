@@ -128,18 +128,41 @@ def change_screen(new_screen):
 # 3. 画面描画ロジック
 # ==========================================
 
-# ドラフト画面専用のボタン装飾CSS（▲▼ボタンに影響させないため）
+# ドラフト画面専用ボタンCSS（取る・見送るボタンを大きくする）
 draft_button_css = """
 <style>
-div[data-testid="column"]:nth-child(1) button {
-    background-color: #b03535 !important;
-    color: white !important;
-    height: 60px; font-size: 18px !important; font-weight: bold !important; border-radius: 8px !important; border: none !important;
+div[data-testid="column"]:nth-of-type(1) button {
+    background-color: #b03535 !important; color: white !important;
+    height: 60px !important; font-size: 18px !important; font-weight: bold !important; border-radius: 8px !important; border: none !important;
 }
-div[data-testid="column"]:nth-child(2) button {
-    background-color: #2a6642 !important;
-    color: white !important;
-    height: 60px; font-size: 18px !important; font-weight: bold !important; border-radius: 8px !important; border: none !important;
+div[data-testid="column"]:nth-of-type(2) button {
+    background-color: #2a6642 !important; color: white !important;
+    height: 60px !important; font-size: 18px !important; font-weight: bold !important; border-radius: 8px !important; border: none !important;
+}
+</style>
+"""
+
+# セットアップ画面専用CSS（スマホでも横並びを維持し、△▽ボタンを小さくする）
+setup_css = """
+<style>
+@media (max-width: 768px) {
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+    }
+}
+div[data-testid="column"]:nth-of-type(1) {
+    min-width: 50px !important;
+    max-width: 70px !important;
+    margin-right: 12px !important;
+}
+div[data-testid="column"]:nth-of-type(1) button {
+    min-height: 36px !important;
+    height: 36px !important;
+    padding: 0 !important;
+    background-color: white !important;
+    color: #333 !important;
+    border: 1px solid #ddd !important;
+    border-radius: 6px !important;
 }
 </style>
 """
@@ -279,42 +302,45 @@ elif st.session_state.screen == "draft_pitcher":
 
 # --- ④ シーズン開始前 (打順・起用法セットアップ) ---
 elif st.session_state.screen == "setup":
+    st.markdown(setup_css, unsafe_allow_html=True)
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-bottom: 24px;'>打順・守備位置</h2>", unsafe_allow_html=True)
     
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
     
-    # 野手の打順設定（全体を枠の中に入れる）
+    # 野手の打順設定
     for i, batter in enumerate(st.session_state.my_batters):
         with st.container(border=True):
-            col_btn, col_card = st.columns([1.5, 8.5], gap="small")
+            col_btn, col_card = st.columns([2, 8])
             
             with col_btn:
-                # ▲ボタン（1番打者以外）
+                # 1番打者以外は「△」を表示。1番打者はズレ防止の空枠
                 if i > 0:
-                    if st.button("▲", key=f"up_{i}", use_container_width=True):
+                    if st.button("△", key=f"up_{i}", use_container_width=True):
                         st.session_state.my_batters[i], st.session_state.my_batters[i-1] = st.session_state.my_batters[i-1], st.session_state.my_batters[i]
                         st.rerun()
                 else:
-                    st.write("") # スペース調整
+                    st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
                 
-                # 打順番号
-                st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: 900; margin: 4px 0;'>{i+1}<span style='font-size:10px; display:block; font-weight: normal;'>番</span></div>", unsafe_allow_html=True)
+                # 打順番号を中央に配置
+                st.markdown(f"<div style='text-align: center; font-size: 24px; font-weight: 900; margin: 8px 0; line-height: 1;'>{i+1}<span style='font-size:10px; display:block; font-weight: normal;'>番</span></div>", unsafe_allow_html=True)
                 
-                # ▼ボタン（9番打者以外）
+                # 9番打者以外は「▽」を表示。9番打者はズレ防止の空枠
                 if i < len(st.session_state.my_batters) - 1:
-                    if st.button("▼", key=f"down_{i}", use_container_width=True):
+                    if st.button("▽", key=f"down_{i}", use_container_width=True):
                         st.session_state.my_batters[i], st.session_state.my_batters[i+1] = st.session_state.my_batters[i+1], st.session_state.my_batters[i]
                         st.rerun()
+                else:
+                    st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
 
             with col_card:
-                # 選手名とセレクトボックス
-                st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 8px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
+                # 右側の名前とセレクトボックス
+                st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-top: 4px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 8px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
                 batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=i%9, label_visibility="collapsed", key=f"pos_{i}")
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
     roles_list = ["先発", "僅差", "ビハインド", "セットアッパー", "抑え"]
     
-    # 投手の起用法設定（こちらもデザインを合わせるため枠に入れる）
+    # 投手の起用法設定
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         with st.container(border=True):
             st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 8px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
