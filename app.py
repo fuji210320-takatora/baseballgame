@@ -256,47 +256,55 @@ def play_half_inning(batting_team, pitcher, batting_index):
     return state.runs, batting_index
 
 # =========================================================
-# 投手マネジメント（スタミナと継投）
+# 5つの起用方法に連動した投手マネジメント（継投ロジック）
 # =========================================================
 class PitcherManager:
     def __init__(self, team):
         self.starters = [p for p in team.pitchers if p.pitcher_role == "先発"]
-        self.middle = [p for p in team.pitchers if p.pitcher_role == "中継ぎ"]
+        self.setups = [p for p in team.pitchers if p.pitcher_role == "セットアッパー"]
         self.closers = [p for p in team.pitchers if p.pitcher_role == "抑え"]
+        self.closes = [p for p in team.pitchers if p.pitcher_role == "僅差"]
+        self.behinds = [p for p in team.pitchers if p.pitcher_role == "ビハインド"]
         
-        # 万が一役割が偏っている場合のフォールバック
+        # フォールバック（役割が偏っている場合の自動振り分け）
         if not self.starters:
             self.starters = team.pitchers[:1]
-        if not self.middle:
-            self.middle = team.pitchers[1:4] if len(team.pitchers) > 1 else team.pitchers
+        if not self.setups:
+            self.setups = team.pitchers[1:3] if len(team.pitchers) > 2 else team.pitchers
         if not self.closers:
             self.closers = team.pitchers[-1:]
             
         self.current_pitcher = random.choice(self.starters)
         self.innings_pitched_by_current = 0.0
 
-    def get_pitcher(self, inning):
-        # スタミナやイニングに応じた継投判断
-        # 先発のスタミナ限界目安 (例: スタミナ80なら約5〜6回)
+    def get_pitcher(self, inning, my_score, opp_score):
+        score_diff = my_score - opp_score # プラスならリード、マイナスならビハインド
+        
+        # 先発のスタミナ限界目安
         starter_limit = max(3, int(self.current_pitcher.stamina / 14))
-        
         is_tired = (self.current_pitcher.pitcher_role == "先発" and self.innings_pitched_by_current >= starter_limit)
-        is_late_inning = (inning >= 8 and self.closers)
         
-        if is_tired or (is_late_inning and self.current_pitcher.pitcher_role != "抑え"):
-            if is_late_inning and self.closers:
-                # 抑えへ交代
-                available_closers = [p for p in self.closers if p != self.current_pitcher]
-                if available_closers:
-                    self.current_pitcher = random.choice(available_closers)
-                    self.innings_pitched_by_current = 0.0
-            elif self.middle:
-                # 中継ぎへ交代
-                available_middle = [p for p in self.middle if p != self.current_pitcher]
-                if available_middle:
-                    self.current_pitcher = random.choice(available_middle)
-                    self.innings_pitched_by_current = 0.0
-                    
+        # 継投の判断
+        should_change = is_tired or self.current_pitcher.pitcher_role == "先発" and inning >= 6
+        
+        if should_change or self.current_pitcher.pitcher_role == "先発":
+            if score_diff < 0 and self.behinds:
+                # 負けているときはビハインド専門投手
+                self.current_pitcher = random.choice(self.behinds)
+            elif inning >= 9 and score_diff >= 0 and score_diff <= 3 and self.closers:
+                # 9回以降の接戦リード時は抑え
+                self.current_pitcher = random.choice(self.closers)
+            elif inning == 8 and abs(score_diff) <= 3 and self.setups:
+                # 8回接戦時はセットアッパー
+                self.current_pitcher = random.choice(self.setups)
+            elif abs(score_diff) <= 3 and self.closes:
+                # 接戦時は僅差投手
+                self.current_pitcher = random.choice(self.closes)
+            elif self.setups:
+                self.current_pitcher = random.choice(self.setups)
+            elif self.closes:
+                self.current_pitcher = random.choice(self.closes)
+                
         return self.current_pitcher
 
     def add_inning(self):
@@ -312,8 +320,8 @@ def play_game(home, away):
     away_batting_index = 0
 
     for inning in range(1, MAX_INNINGS + 1):
-        # アウェイの攻撃（ホームの投手陣が投げる）
-        away_pitcher = home_mgr.get_pitcher(inning)
+        # アウェイの攻撃（ホームの投手陣が投げる：my_score=home_score, opp_score=away_score）
+        away_pitcher = home_mgr.get_pitcher(inning, home_score, away_score)
         away_runs, away_batting_index = play_half_inning(away, away_pitcher, away_batting_index)
         home_score += away_runs
         away_pitcher.stats["earned_runs"] += away_runs
@@ -322,8 +330,8 @@ def play_game(home, away):
         if inning >= 9 and home_score > away_score:
             break
 
-        # ホームの攻撃（アウェイの投手陣が投げる）
-        home_pitcher = away_mgr.get_pitcher(inning)
+        # ホームの攻撃（アウェイの投手陣が投げる：my_score=away_score, opp_score=home_score）
+        home_pitcher = away_mgr.get_pitcher(inning, away_score, home_score)
         home_runs, home_batting_index = play_half_inning(home, home_pitcher, home_batting_index)
         away_score += home_runs
         home_pitcher.stats["earned_runs"] += home_runs
@@ -337,7 +345,6 @@ def play_game(home, away):
     away.runs_for += away_score
     away.runs_against += home_score
 
-    # 勝敗・勝利投手/敗戦投手の簡易判定（最後に投げた、あるいは最も長く投げた投手などに勝利をつける）
     if home_score > away_score:
         home.wins += 1
         away.losses += 1
@@ -589,7 +596,7 @@ elif st.session_state.screen == "draft_pitcher":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 15:
-        st.success("投手15人が揃いました！")
+        st.success("投手15人が揃えました！")
         if st.button("シーズン準備へ進む", use_container_width=True, type="primary"):
             change_screen("setup")
     else:
@@ -662,12 +669,24 @@ elif st.session_state.screen == "setup":
     st.session_state.my_batters = sorted_batters
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
-    roles_list = ["先発", "中継ぎ", "抑え"]
+    # 元の仕様にある5つの起用方法に完全対応
+    roles_list = ["先発", "セットアッパー", "抑え", "僅差", "ビハインド"]
     
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         with st.container(border=True):
             st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
-            def_index = 0 if i < 6 else 1
+            # デフォルトの役割割り当て（最初の6人を先発、次にセットアッパー、抑え、僅差、ビハインドへ）
+            if i < 6:
+                def_index = 0
+            elif i < 9:
+                def_index = 1
+            elif i < 11:
+                def_index = 2
+            elif i < 13:
+                def_index = 3
+            else:
+                def_index = 4
+                
             pitcher.pitcher_role = st.selectbox("起用法選択", roles_list, index=def_index, label_visibility="collapsed", key=f"role_{i}")
 
     st.write("---")
@@ -678,7 +697,7 @@ elif st.session_state.screen == "setup":
         for t_idx in range(5):
             d_batters = [Batter(f"D{t_idx}_{i}", "CPU", 70, 70, 70, "捕手") for i in range(9)]
             d_pitchers = [
-                Pitcher(f"D{t_idx}P{i}", "CPU", 70, 70, {}, pitcher_role="先発" if i < 5 else ("中継ぎ" if i < 12 else "抑え"))
+                Pitcher(f"D{t_idx}P{i}", "CPU", 70, 70, {}, pitcher_role="先発" if i < 6 else ("セットアッパー" if i < 9 else ("抑え" if i < 11 else ("僅差" if i < 13 else "ビハインド"))))
                 for i in range(15)
             ]
             dummy_teams.append(Team(name=f"CPUチーム{t_idx+1}", batters=d_batters, pitchers=d_pitchers))
