@@ -574,12 +574,12 @@ def resolve_outcome(result, defense):
     # ごく低確率の失策。
     if random.random() < catch_prob:
         defender.fielding.PO += 1
-        defender.fielding.UZR += (ability - 60.0) / 100.0
+        defender.fielding.UZR += (ability - 50.0) / 100.0
         return "field_out", pos, defender
 
     # エラー。
     defender.fielding.E += 1
-    defender.fielding.UZR -= 0.8
+    defender.fielding.UZR -= 0.8 + max(0.0, (50.0 - ability) / 100.0)
     return "error", pos, defender
 
 
@@ -882,8 +882,8 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
     # 捕手守備力が高いほど盗塁阻止側が有利。
     # 走力が高いほど成功しやすい。
     catcher_def = catcher.defense_at("C")
-    success_prob = 0.60 + (runner.speed - 60.0) / 250.0 - (catcher_def - 50.0) / 220.0
-    success_prob = clamp(success_prob, 0.35, 0.88)
+    success_prob = (0.10 + (runner.speed - 30.0) * 0.007 - (catcher_def - 30.0) * 0.004)
+    success_prob = clamp(success_prob, 0.03, 0.88)
 
     if random.random() < success_prob:
         bases[from_base] = None
@@ -1072,6 +1072,11 @@ def simulate_game(
     my_pitcher = my_pitching.choose_starter(game_number)
     op_pitcher = op_pitching.choose_starter(game_number)
 
+    my_losing_candidate = None
+    op_losing_candidate = None
+    my_score_diff_prev = 0
+    op_score_diff_prev = 0
+
     if my_pitcher is None or op_pitcher is None:
         return 0, 0, {}
 
@@ -1096,15 +1101,19 @@ def simulate_game(
     for inning in range(1, 13):
 
         # 表：相手攻撃
+        my_diff = my_score - op_score
+        if my_diff < 0 and my_score_diff_prev >= 0:
+            my_losing_candidate = my_pitcher
+        elif my_diff >= 0:
+            my_losing_candidate = None
+
         if my_pitching.should_replace(
-            my_score - op_score,
-            inning,
-            my_pitcher.pitching.outs,
+            my_diff, inning, my_pitcher.pitching.outs
         ):
-            my_pitcher = my_pitching.replace(
-                inning,
-                my_score - op_score,
-            )
+            old_pitcher = my_pitcher
+            my_pitcher = my_pitching.replace(inning, my_diff)
+            if my_diff < 0 and my_losing_candidate is None:
+                my_losing_candidate = old_pitcher
 
         defense_my = {
             pos: player
@@ -1145,17 +1154,22 @@ def simulate_game(
         my_pitching.pitcher_earned[id(my_pitcher)] += r
         my_pitcher.pitching.R += r
         my_pitcher.pitching.ER += r
+        my_score_diff_prev = my_score - op_score
 
         # 裏：自チーム攻撃
+        op_diff = op_score - my_score
+        if op_diff < 0 and op_score_diff_prev >= 0:
+            op_losing_candidate = op_pitcher
+        elif op_diff >= 0:
+            op_losing_candidate = None
+
         if op_pitching.should_replace(
-            op_score - my_score,
-            inning,
-            op_pitcher.pitching.outs,
+            op_diff, inning, op_pitcher.pitching.outs
         ):
-            op_pitcher = op_pitching.replace(
-                inning,
-                op_score - my_score,
-            )
+            old_pitcher = op_pitcher
+            op_pitcher = op_pitching.replace(inning, op_diff)
+            if op_diff < 0 and op_losing_candidate is None:
+                op_losing_candidate = old_pitcher
 
         defense_op = {
             pos: player
@@ -1189,8 +1203,9 @@ def simulate_game(
         op_pitching.pitcher_earned[id(op_pitcher)] += r
         op_pitcher.pitching.R += r
         op_pitcher.pitching.ER += r
+        op_score_diff_prev = op_score - my_score
 
-        # 9回終了時点で勝敗がついていれば終了。
+        # 9回終了時点で勝敗がついていれば終了.
         if inning >= 9 and my_score != op_score:
             break
 
@@ -1239,7 +1254,7 @@ def simulate_game(
         # 「負けた状態になった後、同点に戻らないまま最後に投げていた投手」に敗を付ける。
         # 最終投手がそのまま投げ切った場合は最終投手、途中交代した場合も
         # その後の最後の投手へ引き継がれる。
-        losing_pitcher = my_pitcher
+        losing_pitcher = my_losing_candidate or my_pitcher
         if losing_pitcher is not None:
             losing_pitcher.pitching.L += 1
         return my_score, op_score, {"result": "L", "losing_pitcher": losing_pitcher}
