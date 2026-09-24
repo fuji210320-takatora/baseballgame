@@ -46,6 +46,11 @@ def inject_custom_css():
     .status-count { font-size: 24px; font-weight: bold; }
     .status-left { font-size: 13px; color: #666; }
     .pass-pill { background: #fbebeb; color: #b03535; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: bold; border: 1px solid #fad4d4;}
+    
+    /* ▼ボタンのスタイル調整用 */
+    div[data-testid="column"]:nth-child(1) button {
+        margin-top: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -263,9 +268,24 @@ elif st.session_state.screen == "setup":
     
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
     
+    # 野手の打順設定（▲▼ボタン付き）
     for i, batter in enumerate(st.session_state.my_batters):
-        html_setup_b = f"""
-<div style='background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; align-items: center;'>
+        col_btn, col_card = st.columns([1, 8])
+        
+        with col_btn:
+            st.write("") # ボタンの高さ微調整
+            if i > 0:
+                if st.button("▲", key=f"up_{i}"):
+                    st.session_state.my_batters[i], st.session_state.my_batters[i-1] = st.session_state.my_batters[i-1], st.session_state.my_batters[i]
+                    st.rerun()
+            if i < len(st.session_state.my_batters) - 1:
+                if st.button("▼", key=f"down_{i}"):
+                    st.session_state.my_batters[i], st.session_state.my_batters[i+1] = st.session_state.my_batters[i+1], st.session_state.my_batters[i]
+                    st.rerun()
+
+        with col_card:
+            html_setup_b = f"""
+<div style='background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 4px; display: flex; align-items: center;'>
 <div style='font-size: 24px; font-weight: 900; width: 40px; text-align: center; background: #f0f0f0; border-radius: 4px; padding: 8px 0; margin-right: 16px;'>{i+1}<span style='font-size:10px; display:block; font-weight: normal;'>番</span></div>
 <div style='flex: 1;'>
 <div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{batter.name}</div>
@@ -273,15 +293,16 @@ elif st.session_state.screen == "setup":
 </div>
 </div>
 """
-        st.markdown(html_setup_b, unsafe_allow_html=True)
-        batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=i%9, label_visibility="collapsed", key=f"pos_{i}")
+            st.markdown(html_setup_b, unsafe_allow_html=True)
+            batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=i%9, label_visibility="collapsed", key=f"pos_{i}")
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
     roles_list = ["先発", "僅差", "ビハインド", "セットアッパー", "抑え"]
     
+    # 投手の起用法設定
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         html_setup_p = f"""
-<div style='background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px;'>
+<div style='background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 4px;'>
 <div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name}</div>
 <div style='font-size: 11px; color: #888;'>所属: {pitcher.team}</div>
 </div>
