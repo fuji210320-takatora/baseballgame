@@ -1,15 +1,314 @@
 import streamlit as st
 import pandas as pd
 import random
+from dataclasses import dataclass, field
+from collections import defaultdict
 
-# ==========================================
-# 0. カスタムCSSの定義
-# ==========================================
+# =========================================================
+# 基本設定・定数
+# =========================================================
+GAMES_PER_SEASON = 143
+MAX_INNINGS = 12
+CHANGE_LEVEL = {
+    "S": 100, "A": 85, "B": 70, "C": 55, "D": 40, "E": 25,
+}
+
+def clamp(value, minimum, maximum):
+    return max(minimum, min(maximum, value))
+
+def weighted_choice(items):
+    total = sum(weight for _, weight in items)
+    if total <= 0:
+        return items[-1][0]
+    r = random.uniform(0, total)
+    current = 0
+    for item, weight in items:
+        current += weight
+        if r <= current:
+            return item
+    return items[-1][0]
+
+# =========================================================
+# データクラス定義
+# =========================================================
+@dataclass
+class Batter:
+    name: str
+    team: str
+    contact: int
+    power: int
+    speed: int
+    defense_str: str
+    position: str = "捕手"
+    stats: dict = field(default_factory=lambda: defaultdict(int))
+
+    def reset_stats(self):
+        self.stats = defaultdict(int)
+
+@dataclass
+class Pitcher:
+    name: str
+    team: str
+    control: int
+    stamina: int
+    breaking_balls: dict
+    pitcher_role: str = "先発"
+    stats: dict = field(default_factory=lambda: defaultdict(float))
+
+    def reset_stats(self):
+        self.stats = defaultdict(float)
+
+@dataclass
+class Team:
+    name: str
+    batters: list
+    pitchers: list
+    wins: int = 0
+    losses: int = 0
+    draws: int = 0
+    runs_for: int = 0
+    runs_against: int = 0
+
+    def reset_stats(self):
+        self.wins = 0
+        self.losses = 0
+        self.draws = 0
+        self.runs_for = 0
+        self.runs_against = 0
+        for batter in self.batters:
+            batter.reset_stats()
+        for pitcher in self.pitchers:
+            pitcher.reset_stats()
+
+# =========================================================
+# 投手能力計算
+# =========================================================
+def breaking_ball_value(pitcher):
+    if not pitcher.breaking_balls:
+        return 25
+    values = [
+        CHANGE_LEVEL[level] for level in pitcher.breaking_balls.values() if level in CHANGE_LEVEL
+    ]
+    if not values:
+        return 25
+    average = sum(values) / len(values)
+    variety_bonus = min(len(values) - 1, 3) * 3
+    return clamp(average + variety_bonus, 25, 100)
+
+def pitcher_strength(pitcher):
+    breaking = breaking_ball_value(pitcher)
+    return pitcher.control * 0.55 + breaking * 0.45
+
+# =========================================================
+# 打者 vs 投手
+# =========================================================
+def batter_pitcher_matchup(batter, pitcher):
+    p_strength = pitcher_strength(pitcher)
+    contact_match = batter.contact - p_strength
+    power_match = batter.power - p_strength
+    return contact_match, power_match
+
+def plate_appearance(batter, pitcher):
+    contact_match, power_match = batter_pitcher_matchup(batter, pitcher)
+
+    strikeout = 22
+    walk = 8
+    single = 15
+    double = 5
+    triple = 1
+    homerun = 3
+    out = 46
+
+    strikeout -= contact_match * 0.20
+    single += contact_match * 0.12
+    out -= contact_match * 0.15
+
+    homerun += power_match * 0.10
+    double += power_match * 0.08
+    homerun = max(0.3, homerun)
+    double = max(1.0, double)
+
+    walk += (50 - pitcher.control) * 0.12
+    breaking = breaking_ball_value(pitcher)
+    strikeout += (breaking - 50) * 0.12
+    triple += (batter.speed - 50) * 0.025
+
+    strikeout = max(3, strikeout)
+    walk = max(2, walk)
+    single = max(5, single)
+    double = max(1, double)
+    triple = max(0.2, triple)
+    homerun = max(0.3, homerun)
+    out = max(10, out)
+
+    probabilities = [
+        ("strikeout", strikeout),
+        ("walk", walk),
+        ("single", single),
+        ("double", double),
+        ("triple", triple),
+        ("homerun", homerun),
+        ("out", out),
+    ]
+    return weighted_choice(probabilities)
+
+# =========================================================
+# 試合進行・イニング処理
+# =========================================================
+@dataclass
+class GameState:
+    bases: list = field(default_factory=lambda: [None, None, None])
+    outs: int = 0
+    runs: int = 0
+
+def advance_runners(state, bases_to_advance):
+    old_bases = state.bases[:]
+    state.bases = [None, None, None]
+    for base_index in range(2, -1, -1):
+        runner = old_bases[base_index]
+        if runner is None:
+            continue
+        new_base = base_index + bases_to_advance
+        if new_base >= 3:
+            state.runs += 1
+            runner.stats["runs"] += 1
+        else:
+            state.bases[new_base] = runner
+
+def handle_hit(state, batter, result):
+    if result == "single":
+        advance_runners(state, 1)
+        state.bases[0] = batter
+        batter.stats["hits"] += 1
+        batter.stats["singles"] += 1
+    elif result == "double":
+        advance_runners(state, 2)
+        state.bases[1] = batter
+        batter.stats["hits"] += 1
+        batter.stats["doubles"] += 1
+    elif result == "triple":
+        advance_runners(state, 3)
+        state.bases[2] = batter
+        batter.stats["hits"] += 1
+        batter.stats["triples"] += 1
+    elif result == "homerun":
+        for i in range(3):
+            runner = state.bases[i]
+            if runner is not None:
+                state.runs += 1
+                runner.stats["runs"] += 1
+        state.bases = [None, None, None]
+        state.runs += 1
+        batter.stats["hits"] += 1
+        batter.stats["homeruns"] += 1
+        batter.stats["runs"] += 1
+
+def handle_walk(state, batter):
+    batter.stats["walks"] += 1
+    if state.bases[0] is not None:
+        if state.bases[1] is not None:
+            if state.bases[2] is not None:
+                runner = state.bases[2]
+                if runner:
+                    runner.stats["runs"] += 1
+                state.runs += 1
+                state.bases[2] = state.bases[1]
+            state.bases[1] = state.bases[0]
+        state.bases[0] = batter
+    else:
+        state.bases[0] = batter
+
+def play_half_inning(batting_team, pitcher, batting_index):
+    state = GameState()
+    while state.outs < 3:
+        batter = batting_team.batters[batting_index % 9]
+        batting_index += 1
+        batter.stats["plate_appearances"] += 1
+
+        result = plate_appearance(batter, pitcher)
+
+        if result == "strikeout":
+            batter.stats["strikeouts"] += 1
+            batter.stats["at_bats"] += 1
+            pitcher.stats["strikeouts"] += 1
+            pitcher.stats["batters_faced"] += 1
+            state.outs += 1
+        elif result == "walk":
+            handle_walk(state, batter)
+            pitcher.stats["walks"] += 1
+            pitcher.stats["batters_faced"] += 1
+        elif result in ("single", "double", "triple", "homerun"):
+            batter.stats["at_bats"] += 1
+            handle_hit(state, batter, result)
+            pitcher.stats["hits"] += 1
+            pitcher.stats["batters_faced"] += 1
+            if result == "homerun":
+                pitcher.stats["homeruns"] += 1
+        else:
+            batter.stats["at_bats"] += 1
+            batter.stats["outs"] += 1
+            pitcher.stats["batters_faced"] += 1
+            state.outs += 1
+            
+    pitcher.stats["innings"] += 1.0
+    return state.runs, batting_index
+
+def choose_starting_pitcher(team):
+    starters = [p for p in team.pitchers if p.pitcher_role == "先発"]
+    if starters:
+        return random.choice(starters)
+    return team.pitchers[0] if team.pitchers else None
+
+def play_game(home, away):
+    home_pitcher = choose_starting_pitcher(home)
+    away_pitcher = choose_starting_pitcher(away)
+
+    home_score = 0
+    away_score = 0
+    home_batting_index = 0
+    away_batting_index = 0
+
+    for inning in range(1, MAX_INNINGS + 1):
+        if away_pitcher:
+            away_runs, away_batting_index = play_half_inning(away, home_pitcher, away_batting_index)
+            home_score += away_runs
+
+        if inning >= 9 and home_score > away_score:
+            break
+
+        if home_pitcher:
+            home_runs, home_batting_index = play_half_inning(home, away_pitcher, home_batting_index)
+            away_score += home_runs
+
+        if inning >= 9 and home_score != away_score:
+            break
+
+    home.runs_for += home_score
+    home.runs_against += away_score
+    away.runs_for += away_score
+    away.runs_against += home_score
+
+    if home_score > away_score:
+        home.wins += 1
+        away.losses += 1
+        if home_pitcher: home_pitcher.stats["wins"] += 1
+        if away_pitcher: away_pitcher.stats["losses"] += 1
+    elif away_score > home_score:
+        away.wins += 1
+        home.losses += 1
+        if away_pitcher: away_pitcher.stats["wins"] += 1
+        if home_pitcher: home_pitcher.stats["losses"] += 1
+    else:
+        home.draws += 1
+        away.draws += 1
+
+# =========================================================
+# カスタムCSSの定義
+# =========================================================
 def inject_custom_css():
     st.markdown("""
     <style>
     .stApp { background-color: #f7f6f0; }
-    
     .title-sub { font-size: 12px; color: #888; text-align: center; letter-spacing: 2px; margin-bottom: 0; }
     .title-main { font-size: 32px; font-weight: 900; text-align: center; margin-top: 0; margin-bottom: 24px; }
     .rule-box { background: transparent; border-top: 1px solid #ddd; padding-top: 16px; font-size: 14px; }
@@ -18,12 +317,8 @@ def inject_custom_css():
     .disclaimer { font-size: 11px; color: #666; background: white; padding: 12px; border: 1px solid #ddd; margin-top: 24px; }
 
     .player-card {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        margin-bottom: 16px;
-        border: 1px solid #eee;
+        background: white; border-radius: 12px; padding: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 16px; border: 1px solid #eee;
     }
     .player-pos-badge { background: #1a5a5a; color: white; padding: 4px 12px; border-radius: 16px; font-size: 12px; font-weight: bold; display: inline-block; margin-bottom: 8px;}
     .player-name { font-size: 28px; font-weight: 900; margin: 0 0 4px 0; color: #222;}
@@ -35,56 +330,27 @@ def inject_custom_css():
     .attr-grade { font-size: 22px; font-weight: 900; margin-bottom: 2px;}
     .attr-val { font-size: 11px; color: #888;}
     
-    .grade-S { color: #e6b422; }
-    .grade-A { color: #c93a3a; }
-    .grade-B { color: #c25953; }
-    .grade-C { color: #d48a35; }
-    .grade-D { color: #3a82c9; }
-    .grade-E, .grade-F, .grade-G { color: #666; }
+    .grade-S { color: #e6b422; } .grade-A { color: #c93a3a; } .grade-B { color: #c25953; }
+    .grade-C { color: #d48a35; } .grade-D { color: #3a82c9; } .grade-E, .grade-F, .grade-G { color: #666; }
     
     .status-bar { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #ddd; padding-bottom: 12px; margin-bottom: 16px;}
     .status-count { font-size: 24px; font-weight: bold; }
     .status-left { font-size: 13px; color: #666; }
     .pass-pill { background: #fbebeb; color: #b03535; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: bold; border: 1px solid #fad4d4;}
 
-    /* 打順セレクトボックスの正方形化 */
-    div[data-baseweb="select"] {
-        width: 56px !important;
-        height: 56px !important;
-    }
+    div[data-baseweb="select"] { width: 56px !important; height: 56px !important; }
     div[data-baseweb="select"] > div {
-        width: 56px !important;
-        height: 56px !important;
-        min-height: 56px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        background-color: #f0f0f0 !important;
-        border-radius: 8px !important;
-        font-weight: bold !important;
-        font-size: 18px !important;
+        width: 56px !important; height: 56px !important; min-height: 56px !important;
+        display: flex !important; align-items: center !important; justify-content: center !important;
+        background-color: #f0f0f0 !important; border-radius: 8px !important; font-weight: bold !important; font-size: 18px !important;
     }
 
-    div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
-        flex: 0 0 70px !important;
-        width: 70px !important;
-        min-width: 70px !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {
-        flex: 1 1 auto !important;
-        width: calc(100% - 70px) !important;
-    }
+    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; align-items: center !important; }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) { flex: 0 0 70px !important; width: 70px !important; min-width: 70px !important; }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) { flex: 1 1 auto !important; width: calc(100% - 70px) !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# ==========================================
-# 1. ユーティリティとデータモデル
-# ==========================================
 def val_to_grade(val):
     if val >= 90: return "S", "grade-S"
     elif val >= 80: return "A", "grade-A"
@@ -95,52 +361,43 @@ def val_to_grade(val):
     elif val >= 30: return "F", "grade-F"
     else: return "G", "grade-G"
 
-class Player:
-    def __init__(self, name, team, role):
-        self.name = name
-        self.team = team
-        self.role = role
-
-class Batter(Player):
-    def __init__(self, name, team, meet, power, speed, defense):
-        super().__init__(name, team, "野手")
-        self.meet = meet
-        self.power = power
-        self.speed = speed
-        self.defense = defense
-        self.position = "捕手"
-        self.stats = {"打率": 0.0, "本塁打": 0, "打点": 0, "安打": 0, "盗塁": 0}
-
-class Pitcher(Player):
-    def __init__(self, name, team, control, stamina, pitches):
-        super().__init__(name, team, "投手")
-        self.control = control
-        self.stamina = stamina
-        self.pitches = pitches
-        self.pitcher_role = "中継ぎ"
-        self.stats = {"防御率": 0.0, "勝利": 0, "敗北": 0, "セーブ": 0, "ホールド": 0, "投球回": 0}
-
 @st.cache_data
-def load_players():
+def load_pool_players():
     try:
         df_b = pd.read_excel("野手能力データ_最新.xlsx")
-        batters = [Batter(row['選手名'], row['チーム'], row['ミート'], row['パワー'], row['走力'], row['守備力']) for _, row in df_b.iterrows()]
+        batters = [
+            Batter(
+                name=row['選手名'], team=row['チーム'],
+                contact=row['ミート'], power=row['パワー'],
+                speed=row['走力'], defense_str=str(row['守備力'])
+            ) for _, row in df_b.iterrows()
+        ]
         
         df_p = pd.read_excel("投手能力データ_最新.xlsx")
-        pitchers = [Pitcher(row['選手名'], row['チーム'], row['制球'], row['スタミナ'], row['球種ランク']) for _, row in df_p.iterrows()]
-    except:
-        st.error("Excelファイルが見つかりません。")
+        pitchers = []
+        for _, row in df_p.iterrows():
+            # 仮の変化球データ構造（必要に応じてExcelの列に合わせて拡張してください）
+            bb = {"slider": "B", "curve": "C"}
+            pitchers.append(
+                Pitcher(
+                    name=row['選手名'], team=row['チーム'],
+                    control=row['制球'], stamina=row['スタミナ'],
+                    breaking_balls=bb
+                )
+            )
+    except Exception as e:
+        st.error(f"Excelファイルの読み込みに失敗しました: {e}")
         batters, pitchers = [], []
     return batters, pitchers
 
-# ==========================================
-# 2. 初期化と画面管理
-# ==========================================
+# =========================================================
+# 初期化と画面管理
+# =========================================================
 st.set_page_config(page_title="野球チームメーカー", layout="centered", initial_sidebar_state="collapsed")
 inject_custom_css()
 
 if "screen" not in st.session_state:
-    batters, pitchers = load_players()
+    batters, pitchers = load_pool_players()
     random.shuffle(batters)
     random.shuffle(pitchers)
     
@@ -158,79 +415,6 @@ def change_screen(new_screen):
     st.session_state.screen = new_screen
     st.session_state.pool_idx = 0
     st.rerun()
-
-# ==========================================
-# 3. シーズン結果シミュレーション処理（完全な個人成績先行型）
-# ==========================================
-def simulate_season():
-    # 1. 野手の成績を算出
-    for b in st.session_state.my_batters:
-        base_avg = 0.210 + (b.meet / 100) * 0.130 + random.uniform(-0.03, 0.03)
-        b.stats["打率"] = round(max(0.150, min(0.380, base_avg)), 3)
-        
-        games = 143
-        ab = int(games * random.uniform(3.5, 4.2))
-        hits = int(ab * b.stats["打率"])
-        b.stats["安打"] = hits
-        
-        hr_power_factor = (b.power / 100) ** 2
-        b.stats["本塁打"] = int(hr_power_factor * 35 + random.randint(0, 8))
-        b.stats["打点"] = int(b.stats["本塁打"] * 2.8 + random.randint(15, 35))
-        b.stats["盗塁"] = int((b.speed / 100) * 25 + random.randint(0, 5))
-
-    # 2. 【最重要】各投手ごとに完全に独立して個人の成績（勝・敗・セーブ・防御率など）を先に算出する
-    for p in st.session_state.my_pitchers:
-        # 能力（制球・スタミナ）をベースに防御率を算出
-        base_era = 5.50 - (p.control / 100) * 3.0 + random.uniform(-0.6, 0.8)
-        p.stats["防御率"] = round(max(1.10, min(7.50, base_era)), 2)
-        
-        # 役割ごとの現実的な個人成績の範囲でランダム計算
-        if p.pitcher_role == "先発":
-            # 先発ならだいたい0勝〜15勝、0敗〜12敗程度に収まる
-            p.stats["勝利"] = int((p.control / 100) * 8 + (p.stamina / 100) * 5 + random.randint(0, 3))
-            p.stats["敗北"] = int(((100 - p.control) / 100) * 8 + random.randint(0, 3))
-            p.stats["セーブ"] = 0
-            p.stats["ホールド"] = 0
-            p.stats["投球回"] = int((p.stats["勝利"] + p.stats["敗北"]) * random.uniform(6.0, 7.5) + random.randint(20, 50))
-        elif p.pitcher_role == "抑え":
-            p.stats["勝利"] = int(random.randint(0, 4))
-            p.stats["敗北"] = int(random.randint(0, 4))
-            p.stats["セーブ"] = int((p.control / 100) * 28 + random.randint(0, 7))
-            p.stats["ホールド"] = 0
-            p.stats["投球回"] = int(random.randint(45, 65))
-        elif p.pitcher_role == "セットアッパー":
-            p.stats["勝利"] = int(random.randint(1, 5))
-            p.stats["敗北"] = int(random.randint(1, 5))
-            p.stats["セーブ"] = 0
-            p.stats["ホールド"] = int((p.control / 100) * 22 + random.randint(0, 8))
-            p.stats["投球回"] = int(random.randint(40, 60))
-        else: # 僅差・ビハインド・中継ぎなど
-            p.stats["勝利"] = int(random.randint(0, 4))
-            p.stats["敗北"] = int(random.randint(0, 4))
-            p.stats["セーブ"] = 0
-            p.stats["ホールド"] = int(random.randint(0, 6))
-            p.stats["投球回"] = int(random.randint(30, 55))
-
-    # 3. 全員分の個人成績が出たあとに、その勝敗を「そのまま足し合わせる」
-    total_wins = sum([p.stats["勝利"] for p in st.session_state.my_pitchers])
-    total_losses = sum([p.stats["敗北"] for p in st.session_state.my_pitchers])
-    
-    st.session_state.wins = total_wins
-    st.session_state.losses = total_losses
-    st.session_state.win_rate = round(total_wins / (total_wins + total_losses) if (total_wins + total_losses) > 0 else 0.5, 3)
-
-    # 4. 合計された勝利数をもとに最終順位を判定
-    tw = st.session_state.wins
-    if tw >= 82: st.session_state.rank = 1
-    elif tw >= 77: st.session_state.rank = 2
-    elif tw >= 72: st.session_state.rank = 3
-    elif tw >= 65: st.session_state.rank = 4
-    elif tw >= 58: st.session_state.rank = 5
-    else: st.session_state.rank = 6
-
-# ==========================================
-# 4. 画面描画ロジック
-# ==========================================
 
 draft_button_css = """
 <style>
@@ -262,7 +446,7 @@ if st.session_state.screen == "top":
 <div class='rule-item'><span class='rule-num'>6</span>シーズン中は選手が急に伸びたり、不調に落ちたりする</div>
 </div>
 <div class='disclaimer'>
-本サイトは日本野球機構（NPB）・各球団・選手本人とは関係のない非公式のファンサイトです。選手名・成績・能力値はすべて本ゲームのための架空のもので、実在の選手とは関係ありません。
+本サイトは日本野球機構（NPB）・各球団・選手本人とは関係のない非公式のファンサイトです。
 </div>
 """
     st.markdown(html_top, unsafe_allow_html=True)
@@ -273,7 +457,6 @@ if st.session_state.screen == "top":
 # --- ② 野手を獲得 ---
 elif st.session_state.screen == "draft_batter":
     st.markdown(draft_button_css, unsafe_allow_html=True)
-    
     c_count = len(st.session_state.my_batters)
     html_status = f"""
 <div class='status-bar'>
@@ -287,12 +470,12 @@ elif st.session_state.screen == "draft_batter":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 9:
-        st.success("野手9人が揃えました！")
+        st.success("野手9人が揃いました！")
         if st.button("投手の獲得へ進む", use_container_width=True, type="primary"):
             change_screen("draft_pitcher")
     else:
         player = st.session_state.batters_pool[st.session_state.pool_idx]
-        m_grade, m_cls = val_to_grade(player.meet)
+        m_grade, m_cls = val_to_grade(player.contact)
         p_grade, p_cls = val_to_grade(player.power)
         s_grade, s_cls = val_to_grade(player.speed)
         
@@ -301,19 +484,17 @@ elif st.session_state.screen == "draft_batter":
 <div class='player-pos-badge'>野手</div>
 <h2 class='player-name'>{player.name}</h2>
 <div class='player-sub'>所属: {player.team}</div>
-
 <div class='attr-container'>
-    <div class='attr-box'><div class='attr-label'>ミート</div><div class='attr-grade {m_cls}'>{m_grade}</div><div class='attr-val'>{player.meet}</div></div>
+    <div class='attr-box'><div class='attr-label'>ミート</div><div class='attr-grade {m_cls}'>{m_grade}</div><div class='attr-val'>{player.contact}</div></div>
     <div class='attr-box'><div class='attr-label'>パワー</div><div class='attr-grade {p_cls}'>{p_grade}</div><div class='attr-val'>{player.power}</div></div>
     <div class='attr-box'><div class='attr-label'>走力</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.speed}</div></div>
 </div>
 <div style='margin-top: 16px; font-size: 13px; color: #555; border-top: 1px dashed #ddd; padding-top: 12px;'>
-    守れる所： <b>{player.defense}</b>
+    守れる所： <b>{player.defense_str}</b>
 </div>
 </div>
 """
         st.markdown(html_card, unsafe_allow_html=True)
-        
         col1, col2 = st.columns(2)
         with col1:
             if st.button(f"見送る (残り {st.session_state.b_passes} 回)", use_container_width=True, disabled=(st.session_state.b_passes <= 0)):
@@ -329,7 +510,6 @@ elif st.session_state.screen == "draft_batter":
 # --- ③ 投手を獲得 ---
 elif st.session_state.screen == "draft_pitcher":
     st.markdown(draft_button_css, unsafe_allow_html=True)
-    
     c_count = len(st.session_state.my_pitchers)
     html_status = f"""
 <div class='status-bar'>
@@ -356,18 +536,13 @@ elif st.session_state.screen == "draft_pitcher":
 <div class='player-pos-badge'>投手</div>
 <h2 class='player-name'>{player.name}</h2>
 <div class='player-sub'>所属: {player.team}</div>
-
 <div class='attr-container'>
     <div class='attr-box'><div class='attr-label'>制球</div><div class='attr-grade {c_cls}'>{c_grade}</div><div class='attr-val'>{player.control}</div></div>
     <div class='attr-box'><div class='attr-label'>スタミナ</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.stamina}</div></div>
 </div>
-<div style='margin-top: 16px; font-size: 12px; color: #555; border-top: 1px dashed #ddd; padding-top: 12px; line-height: 1.5;'>
-    球種： <b>{player.pitches}</b>
-</div>
 </div>
 """
         st.markdown(html_card, unsafe_allow_html=True)
-        
         col1, col2 = st.columns(2)
         with col1:
             if st.button(f"見送る (残り {st.session_state.p_passes} 回)", use_container_width=True, disabled=(st.session_state.p_passes <= 0)):
@@ -383,7 +558,6 @@ elif st.session_state.screen == "draft_pitcher":
 # --- ④ シーズン開始前 (打順・起用法セットアップ) ---
 elif st.session_state.screen == "setup":
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-bottom: 24px;'>打順・守備位置</h2>", unsafe_allow_html=True)
-    
     st.session_state.team_name = st.text_input("チーム名", value=st.session_state.team_name, max_chars=12)
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
     
@@ -398,33 +572,23 @@ elif st.session_state.screen == "setup":
     for i, batter in enumerate(sorted_batters):
         with st.container(border=True):
             col_ord, col_card = st.columns([1, 4])
-            
             with col_ord:
                 new_order = st.selectbox(
-                    "打順選択", 
-                    range(1, 10), 
-                    index=batter.temp_order - 1, 
-                    key=f"order_sel_{batter.name}",
-                    label_visibility="collapsed"
+                    "打順選択", range(1, 10), index=batter.temp_order - 1, 
+                    key=f"order_sel_{batter.name}", label_visibility="collapsed"
                 )
                 if new_order != batter.temp_order:
                     batter.temp_order = new_order
                     st.rerun()
-
             with col_card:
                 st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
-                
                 try:
                     pos_idx = positions_list.index(batter.temp_position)
                 except ValueError:
                     pos_idx = 0
-
                 new_pos = st.selectbox(
-                    "守備位置選択", 
-                    positions_list, 
-                    index=pos_idx, 
-                    label_visibility="collapsed", 
-                    key=f"pos_{batter.name}"
+                    "守備位置選択", positions_list, index=pos_idx, 
+                    label_visibility="collapsed", key=f"pos_{batter.name}"
                 )
                 batter.temp_position = new_pos
                 batter.position = new_pos
@@ -432,24 +596,55 @@ elif st.session_state.screen == "setup":
     st.session_state.my_batters = sorted_batters
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
-    roles_list = ["先発", "僅差", "ビハインド", "セットアッパー", "抑え"]
+    roles_list = ["先発", "中継ぎ", "抑え"]
     
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         with st.container(border=True):
             st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
-            def_index = 0 if i < 6 else (4 if i == 14 else 1)
+            def_index = 0 if i < 6 else 1
             pitcher.pitcher_role = st.selectbox("起用法選択", roles_list, index=def_index, label_visibility="collapsed", key=f"role_{i}")
 
     st.write("---")
-    if st.button("🔥 開幕（143試合シミュレーション）", type="primary", use_container_width=True):
-        simulate_season()
+    if st.button("🔥 開幕（143試合シミュレーション実行）", type="primary", use_container_width=True):
+        # チームオブジェクトの作成
+        my_team = Team(name=st.session_state.team_name, batters=st.session_state.my_batters, pitchers=st.session_state.my_pitchers)
+        
+        # 比較用のダミー対戦相手チームを5つ生成して143試合のペナントレースを回す
+        dummy_teams = []
+        for t_idx in range(5):
+            d_batters = [Batter(f"D{t_idx}_{i}", "CPU", 70, 70, 70, "捕手") for i in range(9)]
+            d_pitchers = [Pitcher(f"D{t_idx}P{i}", "CPU", 70, 70, {}) for i in range(5)]
+            dummy_teams.append(Team(name=f"CPUチーム{t_idx+1}", batters=d_batters, pitchers=d_pitchers))
+            
+        all_teams = [my_team] + dummy_teams
+        
+        # ペナントレース実行
+        n = len(all_teams)
+        games_per_pair = GAMES_PER_SEASON // (n - 1)
+        for team in all_teams:
+            team.reset_stats()
+            
+        for i in range(n):
+            for j in range(i + 1, n):
+                home = all_teams[i]
+                away = all_teams[j]
+                for _ in range(games_per_pair):
+                    play_game(home, away)
+                    play_game(away, home)
+                    
+        # 結果をセッションに保存
+        st.session_state.sim_my_team = my_team
+        sorted_teams = sorted(all_teams, key=lambda t: (t.wins, t.runs_for - t.runs_against), reverse=True)
+        st.session_state.sim_rank = sorted_teams.index(my_team) + 1
+        
         change_screen("result")
 
-# --- ⑤ シーズン結果 (順位・個人成績表示) ---
+# --- ⑤ シーズン結果 (順位・本格シミュレーション個人成績表示) ---
 elif st.session_state.screen == "result":
-    st.markdown(f"<h1 style='text-align: center;'>{st.session_state.team_name}</h1>", unsafe_allow_html=True)
-    st.markdown(f"<h2 style='text-align: center; color: #b03535;'>最終順位： 第 {st.session_state.rank} 位</h2>", unsafe_allow_html=True)
-    st.markdown(f"<p style='text-align: center; color: #666;'>143試合成績： {st.session_state.wins}勝 {st.session_state.losses}敗 (勝率 .{int(st.session_state.win_rate*1000):03d})</p>", unsafe_allow_html=True)
+    t = st.session_state.sim_my_team
+    st.markdown(f"<h1 style='text-align: center;'>{t.name}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center; color: #b03535;'>最終順位： 第 {st.session_state.sim_rank} 位</h2>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: #666;'>143試合成績： {t.wins}勝 {t.losses}敗 {t.draws}分 (得点 {t.runs_for} / 失点 {t.runs_against})</p>", unsafe_allow_html=True)
     st.write("---")
     
     tab1, tab2 = st.tabs(["⚾ 野手成績", "投手成績"])
@@ -457,34 +652,40 @@ elif st.session_state.screen == "result":
     with tab1:
         st.subheader("野手 個人成績")
         batter_data = []
-        for i, b in enumerate(st.session_state.my_batters):
+        for i, b in enumerate(t.batters):
+            ab = b.stats["at_bats"]
+            hits = b.stats["hits"]
+            avg = (hits / ab) if ab > 0 else 0.0
             batter_data.append({
                 "打順": f"{i+1}番",
                 "守備": b.position,
                 "選手名": b.name,
                 "所属": b.team,
-                "打率": f"{b.stats['打率']:.3f}",
-                "安打": b.stats["安打"],
-                "本塁打": b.stats["本塁打"],
-                "打点": b.stats["打点"],
-                "盗塁": b.stats["盗塁"]
+                "打率": f"{avg:.3f}",
+                "試合": b.stats["plate_appearances"],
+                "安打": hits,
+                "本塁打": b.stats["homeruns"],
+                "打点": b.stats["rbis"],
+                "盗塁": b.stats["steals"]
             })
         st.dataframe(pd.DataFrame(batter_data), use_container_width=True, hide_index=True)
 
     with tab2:
         st.subheader("投手 個人成績")
         pitcher_data = []
-        for p in st.session_state.my_pitchers:
-            pitcher_data.append({
+        for p in t.pitchers:
+             innings = p.stats["innings"]
+             earned_runs = p.stats.get("earned_runs", 0)
+             era_val = (earned_runs * 9 / innings) if innings > 0 else 0.0
+             pitcher_data.append({
                 "起用法": p.pitcher_role,
                 "選手名": p.name,
                 "所属": p.team,
-                "防御率": f"{p.stats['防御率']:.2f}",
-                "勝利": p.stats["勝利"],
-                "敗北": p.stats["敗北"],
-                "セーブ": p.stats["セーブ"],
-                "ホールド": p.stats["ホールド"],
-                "投球回": p.stats["投球回"]
+                "防御率": f"{era_val:.2f}",
+                "勝利": int(p.stats.get("wins", 0)),
+                "敗北": int(p.stats.get("losses", 0)),
+                "奪三振": int(p.stats.get("strikeouts", 0)),
+                "投球回": int(innings)
             })
         st.dataframe(pd.DataFrame(pitcher_data), use_container_width=True, hide_index=True)
 
