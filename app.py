@@ -1,3 +1,4 @@
+
 import random
 import math
 from dataclasses import dataclass, field
@@ -77,12 +78,12 @@ RANK_WEIGHT = {
 # 基本打席確率。
 # 実際のゲーム結果を見ながらここを調整する。
 BASE_PA = {
-    "single": 0.150,
-    "double": 0.045,
-    "triple": 0.005,
-    "hr": 0.030,
-    "walk": 0.080,
-    "so": 0.210,
+    "single": 0.170,
+    "double": 0.055,
+    "triple": 0.006,
+    "hr": 0.032,
+    "walk": 0.085,
+    "so": 0.205,
 }
 
 SCHEDULE_SAME = 25
@@ -369,17 +370,43 @@ def best_lineup_for_team(team, dh=True):
 
 
 def best_pitching_staff(team):
+    """
+    投手15人を
+      先発6人 / 中継ぎ8人 / 抑え1人
+    に固定。
+
+    中継ぎ8人は能力順を基本に、
+      2人 = 中継ぎエース
+      3人 = 僅差
+      3人 = ビハインド
+    として役割を持たせる。
+    """
     pitchers = sorted(
         team.pitchers,
         key=player_pitching_score,
         reverse=True,
     )
 
-    starters = pitchers[:5]
-    bullpen = pitchers[5:8]
-    closer = pitchers[8] if len(pitchers) > 8 else (pitchers[-1] if pitchers else None)
+    starters = pitchers[:6]
+    bullpen = pitchers[6:14]
+    closer = pitchers[14] if len(pitchers) > 14 else (pitchers[-1] if pitchers else None)
 
-    return starters, bullpen, closer
+    # 中継ぎ8人を役割別に固定。
+    bullpen_roles = {}
+    for i, p in enumerate(bullpen):
+        if i < 2:
+            bullpen_roles[id(p)] = "中継ぎエース"
+        elif i < 5:
+            bullpen_roles[id(p)] = "僅差"
+        else:
+            bullpen_roles[id(p)] = "ビハインド"
+
+    return {
+        "starters": starters,
+        "bullpen": bullpen,
+        "closer": closer,
+        "bullpen_roles": bullpen_roles,
+    }
 
 
 # ============================================================
@@ -660,84 +687,147 @@ def advance_on_walk(bases, batter):
 
 class PitchingState:
     def __init__(self, staff):
-        self.starters = staff["starters"]
-        self.bullpen = staff["bullpen"]
-        self.closer = staff["closer"]
-        self.current = self.starters[0] if self.starters else None
+        # 新形式のスタッフ辞書。旧形式も一応受け付ける。
+        self.starters = staff.get("starters", [])
+        self.bullpen = staff.get("bullpen", [])
+        self.closer = staff.get("closer")
+        self.bullpen_roles = staff.get("bullpen_roles", {})
+        self.current = None
         self.current_start_outs = 0
         self.used_bullpen = []
+        self.appearance_start_outs = {}
+        self.hold_eligible = {}
+        self.save_eligible = False
         self.pitcher_runs = defaultdict(int)  # key: id(Player)
         self.pitcher_earned = defaultdict(int)  # key: id(Player)
 
     def choose_starter(self, game_number):
         if not self.starters:
             return None
-        return self.starters[game_number % len(self.starters)]
+        self.current = self.starters[game_number % len(self.starters)]
+        self.current_start_outs = 0
+        self.appearance_start_outs[id(self.current)] = self.current.pitching.outs
+        self.current.pitching.G += 1
+        self.current.pitching.GS += 1
+        return self.current
+
+    def _available_bullpen(self):
+        return [p for p in self.bullpen if p not in self.used_bullpen]
 
     def should_replace(self, score_diff, inning, outs):
         p = self.current
         if p is None:
             return False
 
-        # 先発は原則6回程度まで。
-        if self.current in self.starters:
+        # 先発は原則6回。6回終了後は中継ぎへ。
+        if p in self.starters:
             if self.current_start_outs >= 18:
                 return True
-
-            # 疲労・大量失点時は早めに交代。
             if self.pitcher_runs[id(p)] >= 5:
                 return True
-
-        # 8回以降はセットアップ/クローザーへ。
-        if inning >= 7 and self.current in self.bullpen:
-            if self.current_start_outs >= 3:
+            # 5回以降に大量失点した場合も交代。
+            if inning >= 5 and self.pitcher_runs[id(p)] >= 4:
                 return True
+            return False
+
+        # 中継ぎは原則1イニング。
+        # ただし7回以前の中継ぎエースは最大2イニングまで許可。
+        role = self.bullpen_roles.get(id(p), "僅差")
+        if role == "中継ぎエース" and inning <= 7:
+            max_outs = 6
+        else:
+            max_outs = 3
+
+        if self.current_start_outs >= max_outs:
+            return True
+
+        # 失点が重なった場合は即交代候補。
+        if self.pitcher_runs[id(p)] >= 3:
+            return True
 
         return False
 
+    def _select_bullpen(self, inning, score_diff):
+        available = self._available_bullpen()
+        if not available:
+            return None
+
+        # 8回以降でリードなら抑えを優先。
+        if inning >= 8 and score_diff > 0 and self.closer is not None and self.closer not in self.used_bullpen:
+            return self.closer
+
+        # リード時は「中継ぎエース」→「僅差」。
+        if score_diff > 0:
+            preferred = [
+                p for p in available
+                if self.bullpen_roles.get(id(p)) == "中継ぎエース"
+            ]
+            if preferred:
+                return preferred[0]
+            preferred = [
+                p for p in available
+                if self.bullpen_roles.get(id(p)) == "僅差"
+            ]
+            if preferred:
+                return preferred[0]
+
+        # 同点・ビハインドは状況に応じて。
+        if score_diff <= -2:
+            preferred = [
+                p for p in available
+                if self.bullpen_roles.get(id(p)) == "ビハインド"
+            ]
+            if preferred:
+                return preferred[0]
+
+        preferred = [
+            p for p in available
+            if self.bullpen_roles.get(id(p)) == "僅差"
+        ]
+        if preferred:
+            return preferred[0]
+
+        return available[0]
+
     def replace(self, inning, score_diff):
         old = self.current
+        if old is None:
+            return None
 
+        new = None
         if old in self.starters:
-            available = [
-                p for p in self.bullpen
-                if p not in self.used_bullpen
-            ]
-
-            if inning >= 8 and self.closer and self.closer not in self.used_bullpen:
-                # リード時は8～9回で抑えを使う。
-                if score_diff > 0 and inning >= 8:
-                    new = self.closer
-                elif available:
-                    new = available[0]
-                else:
-                    new = self.closer or old
-            elif available:
-                new = available[0]
-            else:
-                new = self.closer or old
-
+            new = self._select_bullpen(inning, score_diff)
         elif old in self.bullpen:
-            if inning >= 8 and self.closer and self.closer not in self.used_bullpen:
-                new = self.closer
-            else:
-                available = [
-                    p for p in self.bullpen
-                    if p not in self.used_bullpen
-                ]
-                new = available[0] if available else old
-        else:
-            new = old
+            new = self._select_bullpen(inning, score_diff)
+        elif old is self.closer:
+            # クローザーを途中交代させる必要がある場合のみ残りから選択。
+            new = self._select_bullpen(inning, score_diff)
 
-        if new is not old:
-            if new in self.bullpen and new not in self.used_bullpen:
-                self.used_bullpen.append(new)
-            if new is self.closer and new not in self.used_bullpen:
-                self.used_bullpen.append(new)
+        if new is None or new is old:
+            return self.current
 
-            new.pitching.G += 1
-            self.current = new
-            self.current_start_outs = 0
+        # 交代前の投手が「リードして降板」ならホールド。
+        old_id = id(old)
+        entered_score_diff = self.hold_eligible.get(old_id)
+        if old in self.bullpen and entered_score_diff is not None:
+            if entered_score_diff > 0 and score_diff > 0 and old is not self.closer:
+                old.pitching.HLD += 1
+
+        if new not in self.used_bullpen and new in self.bullpen:
+            self.used_bullpen.append(new)
+
+        new.pitching.G += 1
+        self.current = new
+        self.current_start_outs = 0
+        self.appearance_start_outs[id(new)] = new.pitching.outs
+
+        # 中継ぎとして入った時点でリードしていたかを記録。
+        if new in self.bullpen:
+            self.hold_eligible[id(new)] = score_diff > 0
+
+        if new is self.closer:
+            # 8回以降、リード3点差以内で入った抑えはセーブ機会。
+            self.save_eligible = inning >= 8 and 0 < score_diff <= 3
 
         return self.current
 
@@ -913,12 +1003,6 @@ def simulate_game(
     if my_pitcher is None or op_pitcher is None:
         return 0, 0, {}
 
-    my_pitcher.GS = getattr(my_pitcher.pitching, "GS", 0) + 1
-    op_pitcher.pitching.GS += 1
-
-    my_pitcher.pitching.G += 1
-    op_pitcher.pitching.G += 1
-
     my_score = 0
     op_score = 0
 
@@ -967,7 +1051,13 @@ def simulate_game(
 
         op_score += r
 
-        # このイニングで失点した分を投手へ。
+        # この登板で投げたアウト数を更新。
+        my_pitching.current_start_outs = (
+            my_pitcher.pitching.outs
+            - my_pitching.appearance_start_outs.get(id(my_pitcher), my_pitcher.pitching.outs)
+        )
+
+        # このイニングで失点した分を投手へ.
         my_pitching.pitcher_runs[id(my_pitcher)] += r
         my_pitching.pitcher_earned[id(my_pitcher)] += r
         my_pitcher.pitching.R += r
@@ -1007,6 +1097,11 @@ def simulate_game(
 
         my_score += r
 
+        op_pitching.current_start_outs = (
+            op_pitcher.pitching.outs
+            - op_pitching.appearance_start_outs.get(id(op_pitcher), op_pitcher.pitching.outs)
+        )
+
         op_pitching.pitcher_runs[id(op_pitcher)] += r
         op_pitching.pitcher_earned[id(op_pitcher)] += r
         op_pitcher.pitching.R += r
@@ -1016,9 +1111,12 @@ def simulate_game(
         if inning >= 9 and my_score != op_score:
             break
 
-    # 勝敗
+    # 勝敗・勝利投手・セーブ。
+    # リリーフに交代した場合は、その試合で最後に投げて勝利を確定させた投手を勝利投手とする簡易ルール。
     if my_score > op_score:
         my_pitcher.pitching.W += 1
+        if my_pitcher is my_pitching.closer and my_pitching.save_eligible:
+            my_pitcher.pitching.SV += 1
         return my_score, op_score, {"result": "W"}
     elif my_score < op_score:
         my_pitcher.pitching.L += 1
@@ -1376,66 +1474,72 @@ def pitching_page(pitchers):
 
     names = [p.name for p in pitchers]
 
-    if len(names) < 5:
-        st.error("投手が5人未満です。")
+    if len(names) < 15:
+        st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1人が必要です。")
         return None
 
     starters = []
-
-    st.subheader("先発5人")
-
-    for i in range(5):
+    st.subheader("先発6人")
+    for i in range(6):
         selected_name = st.selectbox(
             f"先発{i + 1}",
             names,
             key=f"starter_{i}",
         )
-
         p = next(x for x in pitchers if x.name == selected_name)
         starters.append(p)
 
     bullpen = []
+    bullpen_roles = {}
+    role_labels = [
+        "中継ぎエース1", "中継ぎエース2",
+        "僅差1", "僅差2", "僅差3",
+        "ビハインド1", "ビハインド2", "ビハインド3",
+    ]
+    role_values = [
+        "中継ぎエース", "中継ぎエース",
+        "僅差", "僅差", "僅差",
+        "ビハインド", "ビハインド", "ビハインド",
+    ]
 
-    st.subheader("中継ぎ3人")
-
-    for i in range(3):
+    st.subheader("中継ぎ8人")
+    for i, (label, role) in enumerate(zip(role_labels, role_values)):
         selected_name = st.selectbox(
-            f"中継ぎ{i + 1}",
+            f"{label}（{role}）",
             names,
             key=f"bullpen_{i}",
         )
-
         p = next(x for x in pitchers if x.name == selected_name)
         bullpen.append(p)
+        bullpen_roles[id(p)] = role
 
-    st.subheader("抑え")
-
+    st.subheader("抑え1人")
     closer_name = st.selectbox(
         "抑え",
         names,
         key="closer",
     )
+    closer = next(x for x in pitchers if x.name == closer_name)
 
-    closer = next(
-        p for p in pitchers
-        if p.name == closer_name
-    )
-
-    # 重複チェック
     chosen = starters + bullpen + [closer]
     duplicates = len(chosen) != len(set(id(p) for p in chosen))
 
     if duplicates:
         st.warning(
             "同じ投手が複数の役割に設定されています。"
-            "ゲーム自体は動きますが、できれば重複を避けてください。"
+            "先発6・中継ぎ8・抑え1をそれぞれ別の投手にしてください。"
         )
 
     if st.button("投手起用決定", type="primary"):
+        if duplicates:
+            st.error("投手の重複を解消してから決定してください。")
+            return None
+
         return {
             "starters": starters,
             "bullpen": bullpen,
             "closer": closer,
+            "bullpen_roles": bullpen_roles,
         }
 
     return None
@@ -1447,16 +1551,12 @@ def pitching_page(pitchers):
 
 def build_opponent_team(team, dh):
     lineup = best_lineup_for_team(team, dh=dh)
-    starters, bullpen, closer = best_pitching_staff(team)
+    staff = best_pitching_staff(team)
 
     return {
         "team": team,
         "lineup": lineup,
-        "staff": {
-            "starters": starters,
-            "bullpen": bullpen,
-            "closer": closer,
-        },
+        "staff": staff,
     }
 
 
@@ -1713,7 +1813,7 @@ elif st.session_state.step == "ready":
         start=1
     ):
         pitching_rows.append({
-            "役割": f"中継ぎ{i}",
+            "役割": st.session_state.my_staff.get("bullpen_roles", {}).get(id(p), "中継ぎ"),
             "選手": p.name,
             "制球": p.control,
             "スタミナ": p.stamina,
@@ -2020,8 +2120,7 @@ elif st.session_state.step == "result":
             "防御率": round(era(p), 2),
             "勝": p.pitching.W,
             "敗": p.pitching.L,
-            "H": p.pitching.H,
-            "HLD": p.pitching.HLD,
+            "H": p.pitching.HLD,
             "S": p.pitching.SV,
             "奪三振": p.pitching.SO,
             "四球": p.pitching.BB,
