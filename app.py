@@ -424,11 +424,10 @@ def load_pool_players():
             
         df_p = pd.read_excel("投手能力データ_最新.xlsx")
         for _, row in df_p.iterrows():
-            # Excelから変化球データを取得（「変化球」または「球種」列を想定、パース処理）
+            # Excelの「球種ランク」列からデータを取得して辞書化
             bb = {}
-            raw_bb = row.get('変化球', row.get('球種', ''))
+            raw_bb = row.get('球種ランク', row.get('変化球', ''))
             if isinstance(raw_bb, str) and raw_bb.strip():
-                # 例: "スライダー:B, フォーク:C" のような形式やスペース区切りを辞書化する簡易パース
                 parts = raw_bb.replace('，', ',').split(',')
                 for p in parts:
                     if ':' in p:
@@ -594,7 +593,7 @@ elif st.session_state.screen == "draft_batter":
                 st.session_state.pool_idx += 1
                 st.rerun()
 
-# --- ③ 投手を獲得 ---
+# --- ③ 投手を獲得（表示名を「変化球」に変更） ---
 elif st.session_state.screen == "draft_pitcher":
     st.markdown(draft_button_css, unsafe_allow_html=True)
     c_count = len(st.session_state.my_pitchers)
@@ -693,7 +692,7 @@ elif st.session_state.screen == "setup":
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         with st.container(border=True):
             bb_text = " / ".join([f"{k} [{v}]" for k, v in pitcher.breaking_balls.items()]) if pitcher.breaking_balls else "なし"
-            st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name} <span style='font-size: 12px; font-weight: normal; color: #666;'>({bb_text})</span></div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name} <span style='font-size: 12px; font-weight: normal; color: #666;'>(変化球: {bb_text})</span></div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
             
             if i < 6:
                 def_index = 0
