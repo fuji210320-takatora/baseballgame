@@ -3,7 +3,7 @@ import pandas as pd
 import random
 
 # ==========================================
-# 0. カスタムCSSの定義（元のデザイン・色合い・正方形プルダウンを完全再現）
+# 0. カスタムCSSの定義
 # ==========================================
 def inject_custom_css():
     st.markdown("""
@@ -29,12 +29,6 @@ def inject_custom_css():
     .player-name { font-size: 28px; font-weight: 900; margin: 0 0 4px 0; color: #222;}
     .player-sub { font-size: 13px; color: #666; margin-bottom: 16px; }
     
-    /* 一軍・二軍の成績行 */
-    .stats-row { background: #f9f9f6; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 8px; display: flex; align-items: center;}
-    .stats-badge { background: #2a6642; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 12px; font-weight: bold;}
-    .stats-badge-sub { background: #dcdcdc; color: #333; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 12px; font-weight: bold;}
-
-    /* 能力値（ミート、パワー等）のボックス */
     .attr-container { display: flex; justify-content: space-between; margin-top: 16px; gap: 4px;}
     .attr-box { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 4px; text-align: center; flex: 1; background: #fafafa;}
     .attr-label { font-size: 10px; color: #666; margin-bottom: 2px;}
@@ -53,7 +47,7 @@ def inject_custom_css():
     .status-left { font-size: 13px; color: #666; }
     .pass-pill { background: #fbebeb; color: #b03535; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: bold; border: 1px solid #fad4d4;}
 
-    /* 打順セレクトボックス（正方形化＆サイズ固定） */
+    /* 打順セレクトボックスの正方形化 */
     div[data-baseweb="select"] {
         width: 56px !important;
         height: 56px !important;
@@ -71,7 +65,6 @@ def inject_custom_css():
         font-size: 18px !important;
     }
 
-    /* セットアップ画面の左右レイアウト強制固定 */
     div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
@@ -116,6 +109,7 @@ class Batter(Player):
         self.speed = speed
         self.defense = defense
         self.position = "捕手"
+        self.stats = {"打率": 0.0, "本塁打": 0, "打点": 0, "安打": 0, "盗塁": 0}
 
 class Pitcher(Player):
     def __init__(self, name, team, control, stamina, pitches):
@@ -124,6 +118,7 @@ class Pitcher(Player):
         self.stamina = stamina
         self.pitches = pitches
         self.pitcher_role = "中継ぎ"
+        self.stats = {"防御率": 0.0, "勝利": 0, "敗北": 0, "セーブ": 0, "投球回": 0}
 
 @st.cache_data
 def load_players():
@@ -157,6 +152,7 @@ if "screen" not in st.session_state:
     st.session_state.b_passes = 5
     st.session_state.p_passes = 8
     st.session_state.pool_idx = 0
+    st.session_state.team_name = "マイチーム"
 
 def change_screen(new_screen):
     st.session_state.screen = new_screen
@@ -164,7 +160,42 @@ def change_screen(new_screen):
     st.rerun()
 
 # ==========================================
-# 3. 画面描画ロジック
+# 3. シーズン結果シミュレーション処理
+# ==========================================
+def simulate_season():
+    # 野手の能力値に基づいた143試合分の成績計算
+    for b in st.session_state.my_batters:
+        base_avg = 0.210 + (b.meet / 100) * 0.130 + random.uniform(-0.03, 0.03)
+        b.stats["打率"] = round(max(0.150, min(0.380, base_avg)), 3)
+        
+        games = 143
+        ab = int(games * random.uniform(3.5, 4.2)) # 打数
+        hits = int(ab * b.stats["打率"])
+        b.stats["安打"] = hits
+        
+        hr_power_factor = (b.power / 100) ** 2
+        b.stats["本塁打"] = int(hr_power_factor * 35 + random.randint(0, 8))
+        b.stats["打点"] = int(b.stats["本塁打"] * 2.8 + random.randint(15, 35))
+        b.stats["盗塁"] = int((b.speed / 100) * 25 + random.randint(0, 5))
+
+    # 投手の能力値に基づいた成績計算
+    for p in st.session_state.my_pitchers:
+        base_era = 5.50 - (p.control / 100) * 3.0 + random.uniform(-0.6, 0.8)
+        p.stats["防御率"] = round(max(1.10, min(7.50, base_era)), 2)
+        
+        if p.pitcher_role == "先発":
+            p.stats["勝利"] = int((p.stamina / 100) * 14 + random.randint(0, 5))
+            p.stats["敗北"] = int((100 - p.control) / 100 * 10 + random.randint(0, 4))
+            p.stats["投球回"] = int(p.stats["勝利"] * 12 + random.randint(80, 150))
+        elif p.pitcher_role == "抑え":
+            p.stats["セーブ"] = int((p.control / 100) * 32 + random.randint(0, 8))
+            p.stats["投球回"] = int(random.randint(45, 65))
+        else:
+            p.stats["ホールド"] = int((p.control / 100) * 25 + random.randint(0, 10))
+            p.stats["投球回"] = int(random.randint(40, 70))
+
+# ==========================================
+# 4. 画面描画ロジック
 # ==========================================
 
 draft_button_css = """
@@ -237,13 +268,6 @@ elif st.session_state.screen == "draft_batter":
 <h2 class='player-name'>{player.name}</h2>
 <div class='player-sub'>所属: {player.team}</div>
 
-<div class='stats-row'>
-    <span class='stats-badge'>一軍</span> 打率 .249 &nbsp; 本 0 &nbsp; 点 5 &nbsp; OPS .646
-</div>
-<div class='stats-row'>
-    <span class='stats-badge-sub'>二軍</span> 打率 .346 &nbsp; 本 0 &nbsp; 点 5 &nbsp; OPS .842
-</div>
-
 <div class='attr-container'>
     <div class='attr-box'><div class='attr-label'>ミート</div><div class='attr-grade {m_cls}'>{m_grade}</div><div class='attr-val'>{player.meet}</div></div>
     <div class='attr-box'><div class='attr-label'>パワー</div><div class='attr-grade {p_cls}'>{p_grade}</div><div class='attr-val'>{player.power}</div></div>
@@ -299,10 +323,6 @@ elif st.session_state.screen == "draft_pitcher":
 <h2 class='player-name'>{player.name}</h2>
 <div class='player-sub'>所属: {player.team}</div>
 
-<div class='stats-row'>
-    <span class='stats-badge'>一軍</span> 防御率 2.52 &nbsp; 奪三振 32
-</div>
-
 <div class='attr-container'>
     <div class='attr-box'><div class='attr-label'>制球</div><div class='attr-grade {c_cls}'>{c_grade}</div><div class='attr-val'>{player.control}</div></div>
     <div class='attr-box'><div class='attr-label'>スタミナ</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.stamina}</div></div>
@@ -330,6 +350,7 @@ elif st.session_state.screen == "draft_pitcher":
 elif st.session_state.screen == "setup":
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-bottom: 24px;'>打順・守備位置</h2>", unsafe_allow_html=True)
     
+    st.session_state.team_name = st.text_input("チーム名", value=st.session_state.team_name, max_chars=12)
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
     
     for idx, b in enumerate(st.session_state.my_batters):
@@ -370,14 +391,53 @@ elif st.session_state.screen == "setup":
             pitcher.pitcher_role = st.selectbox("起用法選択", roles_list, index=def_index, label_visibility="collapsed", key=f"role_{i}")
 
     st.write("---")
-    if st.button("開幕", type="primary", use_container_width=True):
+    if st.button("🔥 開幕（143試合シミュレーション）", type="primary", use_container_width=True):
+        simulate_season()
         change_screen("result")
 
-# --- ⑤ シーズン結果 (簡易版) ---
+# --- ⑤ シーズン結果 (個人成績表示) ---
 elif st.session_state.screen == "result":
-    st.markdown("<h2 style='text-align: center;'>シーズン終了</h2>", unsafe_allow_html=True)
-    st.write("143試合が終了しました（シミュレーション結果）。")
+    st.markdown(f"<h1 style='text-align: center;'>{st.session_state.team_name}</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #666;'>143試合 シーズン個人成績</h3>", unsafe_allow_html=True)
+    st.write("---")
     
-    if st.button("最初からやり直す", use_container_width=True):
+    tab1, tab2 = st.tabs(["⚾ 野手成績", "投 投手成績"])
+    
+    with tab1:
+        st.subheader("野手 個人成績")
+        batter_data = []
+        for i, b in enumerate(st.session_state.my_batters):
+            batter_data.append({
+                "打順": f"{i+1}番",
+                "守備": b.position,
+                "選手名": b.name,
+                "所属": b.team,
+                "打率": f"{b.stats['打率']:.3f}",
+                "安打": b.stats["安打"],
+                "本塁打": b.stats["本塁打"],
+                "打点": b.stats["打点"],
+                "盗塁": b.stats["盗塁"]
+            })
+        st.dataframe(pd.DataFrame(batter_data), use_container_width=True, hide_index=True)
+
+    with tab2:
+        st.subheader("投手 個人成績")
+        pitcher_data = []
+        for p in st.session_state.my_pitchers:
+            pitcher_data.append({
+                "起用法": p.pitcher_role,
+                "選手名": p.name,
+                "所属": p.team,
+                "防御率": f"{p.stats['防御率']:.2f}",
+                "勝利": p.stats["勝利"],
+                "敗北": p.stats["敗北"],
+                "セーブ": p.stats["セーブ"],
+                "ホールド": p.stats["ホールド"],
+                "投球回": p.stats["投球回"]
+            })
+        st.dataframe(pd.DataFrame(pitcher_data), use_container_width=True, hide_index=True)
+
+    st.write("---")
+    if st.button("🔄 最初からやり直す", use_container_width=True):
         st.session_state.clear()
         st.rerun()
