@@ -3,7 +3,7 @@ import pandas as pd
 import random
 
 # ==========================================
-# 0. カスタムCSSの定義（全体共通）
+# 0. カスタムCSSの定義（全体共通 & 左右レイアウトの強制）
 # ==========================================
 def inject_custom_css():
     st.markdown("""
@@ -46,6 +46,24 @@ def inject_custom_css():
     .status-count { font-size: 24px; font-weight: bold; }
     .status-left { font-size: 13px; color: #666; }
     .pass-pill { background: #fbebeb; color: #b03535; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: bold; border: 1px solid #fad4d4;}
+
+    /* スマホでも打順設定を確実に左右並びにするための強制CSS */
+    @media (max-width: 768px) {
+        div[data-testid="stHorizontalBlock"] {
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+        }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
+            flex: 0 0 90px !important;
+            width: 90px !important;
+            min-width: 90px !important;
+            margin-right: 12px !important;
+        }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {
+            flex: 1 1 auto !important;
+            width: calc(100% - 102px) !important;
+        }
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -285,21 +303,21 @@ elif st.session_state.screen == "setup":
         if not hasattr(b, 'temp_order') or b.temp_order is None:
             b.temp_order = idx + 1
 
-    # 変更を検知して瞬時に並び替えるロジック
-    # 各セレクトボックスの変更をチェックするために、一時的にリストをコピーしてソート
     sorted_batters = sorted(st.session_state.my_batters, key=lambda x: x.temp_order)
 
     for i, batter in enumerate(sorted_batters):
         with st.container(border=True):
+            # 左側に打順プルダウン、右側に名前と守備位置
             col_ord, col_card = st.columns([3, 7])
             
             with col_ord:
-                # 打順を選ぶプルダウン（変更した瞬間に該当の打順の場所にパッと移動します）
+                # label_visibility="collapsed" により「〇〇の打順」という文字を完全に消去
                 new_order = st.selectbox(
-                    f"{batter.name}の打順", 
+                    "打順選択", 
                     range(1, 10), 
                     index=batter.temp_order - 1, 
-                    key=f"order_sel_{batter.name}"
+                    key=f"order_sel_{batter.name}",
+                    label_visibility="collapsed"
                 )
                 if new_order != batter.temp_order:
                     batter.temp_order = new_order
@@ -307,9 +325,8 @@ elif st.session_state.screen == "setup":
 
             with col_card:
                 st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
-                batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=0, label_visibility="collapsed", key=f"pos_{batter.name}")
+                batter.position = st.selectbox("守備位置選択", positions_list, index=0, label_visibility="collapsed", key=f"pos_{batter.name}")
 
-    # 最終的に反映する際、temp_order順に並び替えておく
     st.session_state.my_batters = sorted_batters
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
@@ -319,7 +336,7 @@ elif st.session_state.screen == "setup":
         with st.container(border=True):
             st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
             def_index = 0 if i < 6 else (4 if i == 14 else 1)
-            pitcher.pitcher_role = st.selectbox(f"{pitcher.name}の起用法", roles_list, index=def_index, label_visibility="collapsed", key=f"role_{i}")
+            pitcher.pitcher_role = st.selectbox("起用法選択", roles_list, index=def_index, label_visibility="collapsed", key=f"role_{i}")
 
     st.write("---")
     if st.button("開幕", type="primary", use_container_width=True):
