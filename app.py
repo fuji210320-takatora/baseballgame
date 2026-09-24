@@ -1,3 +1,4 @@
+import streamlit as st
 import pandas as pd
 import random
 
@@ -24,6 +25,7 @@ class Pitcher(Player):
         self.pitches = pitches
 
 # --- 2. Excelファイルからのデータ読み込み ---
+@st.cache_data # 毎回Excelを読み込まないよう高速化
 def load_players():
     # 野手データの読み込み
     df_batter = pd.read_excel("野手能力データ_最新.xlsx")
@@ -53,52 +55,66 @@ def load_players():
         
     return batters_list + pitchers_list
 
-# --- 3. ドラフト（獲得/見送り）システムの実装 ---
-def draft_phase(player_pool, target_roster_size=24):
-    # 毎回異なる選手が登場するようにシャッフル
-    random.shuffle(player_pool)
-    my_team = []
-    
-    print(f"=== 新球団ドラフト開始（目標: {target_roster_size}名） ===")
-    
-    for player in player_pool:
-        if len(my_team) >= target_roster_size:
-            break
-            
-        print("-" * 40)
-        print(f"【候補選手】 {player.name} （{player.team}）")
-        
-        if isinstance(player, Batter):
-            print(f" [野手] ミート:{player.meet} | パワー:{player.power} | 走力:{player.speed}")
-            print(f"        守備:{player.defense}")
-        else:
-            print(f" [投手] 制球:{player.control} | スタミナ:{player.stamina}")
-            print(f"        球種:{player.pitches}")
-            
-        # プレイヤーに入力を促す（Webアプリ化する際はここの処理が画面上のボタンになります）
-        while True:
-            action = input("獲得しますか？ (y:獲得 / n:見送り) > ").strip().lower()
-            if action in ['y', 'n']:
-                break
-                
-        if action == 'y':
-            my_team.append(player)
-            print(f" ＞ {player.name} を獲得しました！ (現在: {len(my_team)}/{target_roster_size}名)")
-        else:
-            print(" ＞ 見送りました。")
+# --- 3. Streamlitでの画面構築と状態管理 ---
+st.title("野球チームメーカー（開発中）")
 
-    print("\n=== チーム編成完了 ===")
-    print(f"【あなたのチームの所属選手（計{len(my_team)}名）】")
-    for p in my_team:
+# 初回のみ実行される初期化処理（ページをリロードしてもデータを保持する）
+if "initialized" not in st.session_state:
+    st.session_state.all_players = load_players()
+    random.shuffle(st.session_state.all_players) # 選手をシャッフル
+    st.session_state.my_team = []
+    st.session_state.current_index = 0
+    st.session_state.initialized = True
+
+target_roster_size = 24
+
+# 進行状況のチェック
+if len(st.session_state.my_team) >= target_roster_size:
+    # 24人集まった場合の画面
+    st.success(f"チーム編成完了！ {target_roster_size}名の選手が集まりました。")
+    st.subheader("【獲得選手一覧】")
+    for p in st.session_state.my_team:
         if isinstance(p, Batter):
-            print(f" [野] {p.name}")
+            st.write(f"⚾ [野] {p.name} ({p.team})")
         else:
-            print(f" [投] {p.name}")
+            st.write(f"⚾ [投] {p.name} ({p.team})")
             
-    return my_team
+elif st.session_state.current_index >= len(st.session_state.all_players):
+    st.error("候補選手がいなくなりました。")
+    
+else:
+    # ドラフト継続中の画面
+    player = st.session_state.all_players[st.session_state.current_index]
+    
+    st.subheader("現在の候補選手")
+    st.markdown(f"### **{player.name}** （{player.team}）")
+    
+    # 選手の能力表示
+    if isinstance(player, Batter):
+        st.write("**[野手]**")
+        st.write(f"ミート: **{player.meet}** | パワー: **{player.power}** | 走力: **{player.speed}**")
+        st.write(f"守備: {player.defense}")
+    else:
+        st.write("**[投手]**")
+        st.write(f"制球: **{player.control}** | スタミナ: **{player.stamina}**")
+        st.write(f"球種: {player.pitches}")
+        
+    st.progress(len(st.session_state.my_team) / target_roster_size)
+    st.write(f"現在の獲得人数: **{len(st.session_state.my_team)} / {target_roster_size} 名**")
 
-# --- 実行部分 ---
-if __name__ == "__main__":
-    # 選手データを読み込み、ドラフトを開始する
-    all_players = load_players()
-    my_team = draft_phase(all_players, target_roster_size=24)
+    st.write("---")
+    
+    # ボタンの配置
+    col1, col2 = st.columns(2)
+    with col1:
+        # 獲得ボタンが押されたらチームに追加し、次の選手へ
+        if st.button("⭕ 獲得する", use_container_width=True):
+            st.session_state.my_team.append(player)
+            st.session_state.current_index += 1
+            st.rerun() # 画面を再読み込みして更新
+            
+    with col2:
+        # 見送りボタンが押されたらチームには追加せず、次の選手へ
+        if st.button("❌ 見送る", use_container_width=True):
+            st.session_state.current_index += 1
+            st.rerun()
