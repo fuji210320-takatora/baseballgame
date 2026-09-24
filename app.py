@@ -40,6 +40,8 @@ class Batter:
     speed: int
     defense_str: str
     position: str = "捕手"
+    temp_order: int = 1
+    temp_position: str = "捕手"
     stats: dict = field(default_factory=lambda: defaultdict(int))
 
     def reset_stats(self):
@@ -363,31 +365,48 @@ def val_to_grade(val):
 
 @st.cache_data
 def load_pool_players():
+    batters = []
+    pitchers = []
     try:
         df_b = pd.read_excel("野手能力データ_最新.xlsx")
-        batters = [
-            Batter(
+        for _, row in df_b.iterrows():
+            batters.append(Batter(
                 name=row['選手名'], team=row['チーム'],
                 contact=row['ミート'], power=row['パワー'],
                 speed=row['走力'], defense_str=str(row['守備力'])
-            ) for _, row in df_b.iterrows()
-        ]
-        
+            ))
         df_p = pd.read_excel("投手能力データ_最新.xlsx")
-        pitchers = []
         for _, row in df_p.iterrows():
-            # 仮の変化球データ構造（必要に応じてExcelの列に合わせて拡張してください）
             bb = {"slider": "B", "curve": "C"}
-            pitchers.append(
-                Pitcher(
-                    name=row['選手名'], team=row['チーム'],
-                    control=row['制球'], stamina=row['スタミナ'],
-                    breaking_balls=bb
-                )
-            )
-    except Exception as e:
-        st.error(f"Excelファイルの読み込みに失敗しました: {e}")
-        batters, pitchers = [], []
+            pitchers.append(Pitcher(
+                name=row['選手名'], team=row['チーム'],
+                control=row['制球'], stamina=row['スタミナ'],
+                breaking_balls=bb
+            ))
+    except Exception:
+        # Excelファイルがない場合のフォールバック（自動生成ダミーデータ）
+        family_names = ["佐藤", "鈴木", "高橋", "田中", "伊藤", "渡辺", "山本", "中村", "小林", "加藤", "吉田", "山田", "佐々木", "山口", "松本"]
+        first_names = ["翔", "大輝", "蓮", "陽翔", "樹", "湊", "新", "朝陽", "悠真", "律", "結衣", "陽葵", "澪", "紬", "芽依"]
+        teams = ["東京", "大阪", "名古屋", "福岡", "札幌", "仙台"]
+        
+        for i in range(80):
+            name = f"{random.choice(family_names)}{random.choice(first_names)}"
+            batters.append(Batter(
+                name=name, team=random.choice(teams),
+                contact=random.randint(40, 95),
+                power=random.randint(30, 95),
+                speed=random.randint(40, 90),
+                defense_str="捕手・一塁手・外野手"
+            ))
+        for i in range(80):
+            name = f"{random.choice(family_names)}{random.choice(first_names)}"
+            bb = {"スライダー": random.choice(["A", "B", "C"]), "フォーク": random.choice(["B", "C", "D"])}
+            pitchers.append(Pitcher(
+                name=name, team=random.choice(teams),
+                control=random.randint(40, 95),
+                stamina=random.randint(40, 95),
+                breaking_balls=bb
+            ))
     return batters, pitchers
 
 # =========================================================
@@ -523,7 +542,7 @@ elif st.session_state.screen == "draft_pitcher":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 15:
-        st.success("投手15人が揃えました！")
+        st.success("投手15人が揃いました！")
         if st.button("シーズン準備へ進む", use_container_width=True, type="primary"):
             change_screen("setup")
     else:
@@ -606,10 +625,8 @@ elif st.session_state.screen == "setup":
 
     st.write("---")
     if st.button("🔥 開幕（143試合シミュレーション実行）", type="primary", use_container_width=True):
-        # チームオブジェクトの作成
         my_team = Team(name=st.session_state.team_name, batters=st.session_state.my_batters, pitchers=st.session_state.my_pitchers)
         
-        # 比較用のダミー対戦相手チームを5つ生成して143試合のペナントレースを回す
         dummy_teams = []
         for t_idx in range(5):
             d_batters = [Batter(f"D{t_idx}_{i}", "CPU", 70, 70, 70, "捕手") for i in range(9)]
@@ -618,28 +635,31 @@ elif st.session_state.screen == "setup":
             
         all_teams = [my_team] + dummy_teams
         
-        # ペナントレース実行
+        # ペナントレース実行（日程ループの重複カウントを修正）
         n = len(all_teams)
         games_per_pair = GAMES_PER_SEASON // (n - 1)
+        
         for team in all_teams:
             team.reset_stats()
             
         for i in range(n):
             for j in range(i + 1, n):
-                home = all_teams[i]
-                away = all_teams[j]
-                for _ in range(games_per_pair):
-                    play_game(home, away)
-                    play_game(away, home)
+                team_a = all_teams[i]
+                team_b = all_teams[j]
+                for g in range(games_per_pair):
+                    # ホームとビジターを交互に入れ替えて対戦
+                    if g % 2 == 0:
+                        play_game(team_a, team_b)
+                    else:
+                        play_game(team_b, team_a)
                     
-        # 結果をセッションに保存
         st.session_state.sim_my_team = my_team
         sorted_teams = sorted(all_teams, key=lambda t: (t.wins, t.runs_for - t.runs_against), reverse=True)
         st.session_state.sim_rank = sorted_teams.index(my_team) + 1
         
         change_screen("result")
 
-# --- ⑤ シーズン結果 (順位・本格シミュレーション個人成績表示) ---
+# --- ⑤ シーズン結果 ---
 elif st.session_state.screen == "result":
     t = st.session_state.sim_my_team
     st.markdown(f"<h1 style='text-align: center;'>{t.name}</h1>", unsafe_allow_html=True)
@@ -662,7 +682,7 @@ elif st.session_state.screen == "result":
                 "選手名": b.name,
                 "所属": b.team,
                 "打率": f"{avg:.3f}",
-                "試合": b.stats["plate_appearances"],
+                "打席": b.stats["plate_appearances"],  # 「試合」ラベルを正しい「打席」に変更
                 "安打": hits,
                 "本塁打": b.stats["homeruns"],
                 "打点": b.stats["rbis"],
