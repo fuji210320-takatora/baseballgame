@@ -497,7 +497,7 @@ def advance_on_walk(bases, batter):
     return new_bases, runs, scoring
 
 # ============================================================
-# 試合用投手交代
+# 試合用投手交代 (リニューアル版)
 # ============================================================
 class PitchingState:
     def __init__(self, staff):
@@ -515,11 +515,15 @@ class PitchingState:
         self.game_holds = []
         self.pitcher_runs = defaultdict(int)
         self.pitcher_earned = defaultdict(int)
+        
+        # 各投手の試合ごとの最大スタミナ（球数）を保持する辞書
+        self.max_pitches = {} 
 
     def choose_starter(self, game_number):
         if not self.starters:
             return None
         self.current = self.starters[game_number % len(self.starters)]
+        self.current.game_pitches = 0 # 試合開始時に球数をリセット
         self.current_start_outs = 0
         self.appearance_start_outs[id(self.current)] = self.current.pitching.outs
         self.current.pitching.G += 1
@@ -534,24 +538,56 @@ class PitchingState:
         p = self.current
         if p is None:
             return False
-        if p in self.starters:
-            if self.current_start_outs >= 18:
-                return True
-            if self.pitcher_runs[id(p)] >= 5:
-                return True
-            if inning >= 5 and self.pitcher_runs[id(p)] >= 4:
-                return True
-            return False
 
-        role = self.bullpen_roles.get(id(p), "僅差")
-        if role == "中継ぎエース" and inning <= 7:
-            max_outs = 6
+        p_id = id(p)
+        runs = self.pitcher_runs[p_id]
+        current_outs = self.current_start_outs
+        pitches = getattr(p, 'game_pitches', 0)
+        
+        # スタミナ限界の計算 (能力のスタミナ * 1.1〜1.5 を試合ごとに固定)
+        if p_id not in self.max_pitches:
+            self.max_pitches[p_id] = p.stamina * random.uniform(1.1, 1.5)
+        max_limit = self.max_pitches[p_id]
+        
+        # スタミナ切れ判定
+        is_stamina_empty = pitches >= max_limit
+        
+        # 役割の取得
+        if p in self.starters:
+            role = "先発"
+        elif p is self.closer:
+            role = "抑え"
         else:
-            max_outs = 3
-        if self.current_start_outs >= max_outs:
+            role = self.bullpen_roles.get(p_id, "僅差")
+
+        # ① 7失点以上：無条件で即交代
+        if runs >= 7:
             return True
-        if self.pitcher_runs[id(p)] >= 3:
+
+        # ② ビハインド起用の特例
+        # スタミナが切れていても、イニングの途中（アウト数が3の倍数でない）なら投げ切る
+        if role == "ビハインド" and is_stamina_empty:
+            if current_outs % 3 != 0:
+                is_stamina_empty = False 
+
+        # ③ 失点数に応じた強制イニング制限（スタミナに関わらず交代）
+        if runs >= 5 and current_outs >= 15: # 5回(15アウト)まで
             return True
+        if runs >= 3 and current_outs >= 18: # 6回(18アウト)まで
+            return True
+        if runs >= 2 and current_outs >= 21: # 7回(21アウト)まで
+            return True
+
+        # ④ スタミナ限界での交代（1失点以下の基本ルール）
+        if is_stamina_empty:
+            return True
+
+        # ⑤ 中継ぎ・抑えのデフォルト制限（ビハインド以外）
+        if p not in self.starters and role != "ビハインド":
+            max_outs = 6 if (role == "中継ぎエース" and inning <= 7) else 3
+            if current_outs >= max_outs:
+                return True
+                
         return False
 
     def _select_bullpen(self, inning, score_diff):
@@ -596,6 +632,7 @@ class PitchingState:
         if new not in self.used_bullpen and new in self.bullpen:
             self.used_bullpen.append(new)
 
+        new.game_pitches = 0 # 登板時に球数をリセット
         new.pitching.G += 1
         self.game_pitchers.append(new)
         self.current = new
@@ -666,6 +703,13 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
 
         probs, pitch_name = at_bat_probabilities(batter, pitcher, pitcher.pitching.outs)
         result = choose_result(probs)
+
+        # 1打席あたりの球数をランダムで計算して投手に加算
+        if result in ("so", "walk"):
+            pa_pitches = random.randint(4, 8)
+        else:
+            pa_pitches = random.randint(1, 6)
+        pitcher.game_pitches = getattr(pitcher, 'game_pitches', 0) + pa_pitches
 
         if result in ("single", "double", "triple", "hr"):
             batter.batting.AB += 1
@@ -926,14 +970,14 @@ def create_schedule(my_league, same_teams, inter_teams):
 # 能力値をランクと色に変換する関数
 # ============================================================
 def val_to_rank(val):
-    if val >= 90: return "S", "#D4AF37"  # 金色
-    elif val >= 80: return "A", "#E91E63" # ピンク色
-    elif val >= 70: return "B", "#F44336" # 赤色
-    elif val >= 60: return "C", "#FF9800" # オレンジ色
-    elif val >= 50: return "D", "#FFD600" # 黄色
-    elif val >= 40: return "E", "#4CAF50" # 緑色
-    elif val >= 20: return "F", "#2196F3" # 青色
-    else: return "G", "#9E9E9E"           # グレー色
+    if val >= 90: return "S", "#D4AF37"  
+    elif val >= 80: return "A", "#E91E63" 
+    elif val >= 70: return "B", "#F44336" 
+    elif val >= 60: return "C", "#FF9800" 
+    elif val >= 50: return "D", "#FFD600" 
+    elif val >= 40: return "E", "#4CAF50" 
+    elif val >= 20: return "F", "#2196F3" 
+    else: return "G", "#9E9E9E"           
 
 # ============================================================
 # ドラフト画面
@@ -1713,7 +1757,6 @@ elif st.session_state.step == "result":
         with st.expander("全試合ログを表示"):
             st.dataframe(log_df, hide_index=True, use_container_width=True, height=300)
             st.download_button("試合結果CSV", log_df.to_csv(index=False).encode("utf-8-sig"), file_name="game_results.csv", mime="text/csv")
-
 
     # シーズン終了演出
     wins = result["wins"]
