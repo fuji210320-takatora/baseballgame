@@ -1165,7 +1165,7 @@ def order_page(fielders, league):
     return None
 
 # ============================================================
-# 投手起用画面
+# 投手起用画面 (リニューアル版 UI)
 # ============================================================
 def pitching_page(pitchers):
     st.header("⑤ 投手起用設定")
@@ -1175,94 +1175,47 @@ def pitching_page(pitchers):
         st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1人が必要です。")
         return None
 
-    default_key = "pitching_defaults"
-    if default_key not in st.session_state:
+    if "pitcher_roles" not in st.session_state:
         stamina_sorted = sorted(pitchers, key=lambda p: p.stamina, reverse=True)
-        default_starters = stamina_sorted[:6]
-        remaining = stamina_sorted[6:]
-        random.shuffle(remaining)
-        default_bullpen = remaining[:8]
-        default_closer = remaining[8]
-        st.session_state[default_key] = {
-            "starters": [p.name for p in default_starters],
-            "bullpen": [p.name for p in default_bullpen],
-            "closer": default_closer.name,
-        }
+        roles = {}
+        for i, p in enumerate(stamina_sorted):
+            if i < 6: roles[p.name] = "先発"
+            elif i < 14: roles[p.name] = "僅差"
+            else: roles[p.name] = "抑え"
+        st.session_state.pitcher_roles = roles
 
-    defaults = st.session_state[default_key]
-    role_keys = [f"pitch_role_{i}" for i in range(15)]
-    default_values = defaults["starters"] + defaults["bullpen"] + [defaults["closer"]]
+    def update_role(p_name):
+        st.session_state.pitcher_roles[p_name] = st.session_state[f"sel_{p_name}"]
 
-    for key, default_name in zip(role_keys, default_values):
-        if key not in st.session_state:
-            st.session_state[key] = default_name
+    roles_list = list(st.session_state.pitcher_roles.values())
+    sp_count = roles_list.count("先発")
+    cl_count = roles_list.count("抑え")
 
-    def swap_pitcher_role(changed_index):
-        changed_key = role_keys[changed_index]
-        new_name = st.session_state[changed_key]
-        old_name = st.session_state.get(f"pitch_role_prev_{changed_index}")
+    if sp_count != 6:
+        st.markdown(f'<div style="background-color: #FBE9E7; padding: 15px; border-radius: 8px; color: #D32F2F; font-weight: bold; margin-bottom: 20px;">先発は6人ちょうどにしてください（いま{sp_count}人）</div>', unsafe_allow_html=True)
+    if cl_count != 1:
+        st.markdown(f'<div style="background-color: #FBE9E7; padding: 15px; border-radius: 8px; color: #D32F2F; font-weight: bold; margin-bottom: 20px;">抑えは1人ちょうどにしてください（いま{cl_count}人）</div>', unsafe_allow_html=True)
 
-        if new_name in [st.session_state.get(k) for k in role_keys]:
-            for j, key in enumerate(role_keys):
-                if j == changed_index:
-                    continue
-                if st.session_state.get(key) == new_name:
-                    if old_name:
-                        st.session_state[key] = old_name
-                    break
-        st.session_state[f"pitch_role_prev_{changed_index}"] = st.session_state[changed_key]
+    role_options = ["先発", "中継ぎエース", "僅差", "ビハインド", "抑え"]
 
-    def player_by_name(name):
-        return next(x for x in pitchers if x.name == name)
+    for p in pitchers:
+        with st.container():
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                st.markdown(f'<div style="padding-top: 5px;"><span style="font-size: 18px; font-weight: 900; color: #111;">{p.name}</span><br><span style="font-size: 13px; color: #777;">{p.team}所属・制球 {int(p.control)}・スタミナ {int(p.stamina)}</span></div>', unsafe_allow_html=True)
+            with c2:
+                current_role = st.session_state.pitcher_roles.get(p.name, "僅差")
+                idx = role_options.index(current_role) if current_role in role_options else 2
+                st.selectbox("役割", role_options, index=idx, key=f"sel_{p.name}", label_visibility="collapsed", on_change=update_role, args=(p.name,))
+        st.markdown("<hr style='margin: 0 0 10px 0;'>", unsafe_allow_html=True)
 
-    def role_select(index, label):
-        key = role_keys[index]
-        if f"pitch_role_prev_{index}" not in st.session_state:
-            st.session_state[f"pitch_role_prev_{index}"] = st.session_state[key]
-        return st.selectbox(
-            label,
-            names,
-            key=key,
-            on_change=swap_pitcher_role,
-            args=(index,),
-        )
+    if st.button("投手起用決定", type="primary", disabled=(sp_count != 6 or cl_count != 1)):
+        starters = [p for p in pitchers if st.session_state.pitcher_roles[p.name] == "先発"]
+        closer = [p for p in pitchers if st.session_state.pitcher_roles[p.name] == "抑え"][0]
+        bullpen = [p for p in pitchers if st.session_state.pitcher_roles[p.name] not in ("先発", "抑え")]
+        bullpen_roles = {id(p): st.session_state.pitcher_roles[p.name] for p in bullpen}
+        return {"starters": starters, "bullpen": bullpen, "closer": closer, "bullpen_roles": bullpen_roles}
 
-    starters = []
-    st.subheader("先発6人")
-    for i in range(6):
-        selected_name = role_select(i, f"先発{i + 1}")
-        starters.append(player_by_name(selected_name))
-
-    bullpen = []
-    bullpen_roles = {}
-    role_labels = ["中継ぎエース1", "中継ぎエース2", "僅差1", "僅差2", "僅差3", "ビハインド1", "ビハインド2", "ビハインド3"]
-    role_values = ["中継ぎエース", "中継ぎエース", "僅差", "僅差", "僅差", "ビハインド", "ビハインド", "ビハインド"]
-
-    st.subheader("中継ぎ8人")
-    for i, (label, role) in enumerate(zip(role_labels, role_values), start=6):
-        selected_name = role_select(i, f"{label}（{role}）")
-        p = player_by_name(selected_name)
-        bullpen.append(p)
-        bullpen_roles[id(p)] = role
-
-    st.subheader("抑え1人")
-    closer_name = role_select(14, "抑え")
-    closer = player_by_name(closer_name)
-
-    chosen = starters + bullpen + [closer]
-    duplicates = len(chosen) != len(set(id(p) for p in chosen))
-
-    if duplicates:
-        st.error("投手の入れ替え処理で重複が残りました。画面を再読み込みしてください。")
-        return None
-
-    if st.button("投手起用決定", type="primary"):
-        return {
-            "starters": starters,
-            "bullpen": bullpen,
-            "closer": closer,
-            "bullpen_roles": bullpen_roles,
-        }
     return None
 
 def build_opponent_team(team, dh):
@@ -1581,7 +1534,6 @@ elif st.session_state.step == "season":
 elif st.session_state.step == "result":
     result = st.session_state.season_result
 
-    # 共通CSSのインジェクション
     st.markdown("""
     <style>
     .disclaimer-box { font-size: 11px; color: #888; background-color: #f9f9f9; padding: 12px; border: 1px solid #eee; margin-bottom: 20px; line-height: 1.5; }
@@ -1677,7 +1629,6 @@ elif st.session_state.step == "result":
         if pos == "DH" or pos == "代打": 
             uzr_str = "－"
         
-        # 完全にフラットなHTML文字列（Markdownでのコードブロック化を防止）
         html_bat += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{order_str}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{jp_pos}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">打率</span><span class="ms-val">{avg_str}</span></div><div class="ms-item"><span class="ms-label">本塁打</span><span class="ms-val-small">{p.batting.HR}</span></div><div class="ms-item"><span class="ms-label">打点</span><span class="ms-val-small">{p.batting.RBI}</span></div><div class="ms-item"><span class="ms-label">盗塁</span><span class="ms-val-small">{p.batting.SB}</span></div><div class="ms-item"><span class="ms-label">OPS</span><span class="ms-val">{ops_str}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.batting.G}</b></div><div class="ss-item">打席<b>{p.batting.PA}</b></div><div class="ss-item">打数<b>{p.batting.AB}</b></div><div class="ss-item">安打<b>{p.batting.H}</b></div><div class="ss-item">UZR<b>{uzr_str}</b></div></div></div>'
 
     html_bat += '</div>'
@@ -1698,7 +1649,6 @@ elif st.session_state.step == "result":
             
         era_str = f"{era(p):.2f}"
         
-        # 完全にフラットなHTML文字列（Markdownでのコードブロック化を防止）
         html_pitch += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{i}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{role_str}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">防御率</span><span class="ms-val">{era_str}</span></div><div class="ms-item"><span class="ms-label">勝</span><span class="ms-val-small">{p.pitching.W}</span></div><div class="ms-item"><span class="ms-label">敗</span><span class="ms-val-small">{p.pitching.L}</span></div><div class="ms-item"><span class="ms-label">HP</span><span class="ms-val-small">{p.pitching.HLD}</span></div><div class="ms-item"><span class="ms-label">S</span><span class="ms-val-small">{p.pitching.SV}</span></div><div class="ms-item"><span class="ms-label">奪三振</span><span class="ms-val-small">{p.pitching.SO}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.pitching.G}</b></div><div class="ss-item">先発<b>{p.pitching.GS}</b></div><div class="ss-item">投球回<b>{innings_str(p.pitching.outs)}</b></div><div class="ss-item">四球<b>{p.pitching.BB}</b></div><div class="ss-item">自責点<b>{p.pitching.ER}</b></div></div></div>'
 
     html_pitch += '</div>'
@@ -1717,11 +1667,53 @@ elif st.session_state.step == "result":
         st.markdown(html_pitch, unsafe_allow_html=True)
 
     with tab_log:
-        log_df = pd.DataFrame(result["game_log"])
-        st.dataframe(log_df, hide_index=True, use_container_width=True, height=500)
+        league_opponents = list(set(item["opponent"] for item in st.session_state.schedule if item["type"] == "league"))
+        
+        standings_data = []
+        my_w = result["wins"]
+        my_l = result["losses"]
+        my_d = result["draws"]
+        my_pct = my_w / (my_w + my_l) if (my_w + my_l) > 0 else 0
+        standings_data.append({"team": "マイチーム", "W": my_w, "L": my_l, "D": my_d, "pct": my_pct, "is_me": True})
 
-        with st.expander("データダウンロード"):
+        rng = random.Random(my_w + my_l)
+        for opp in league_opponents:
+            opp_d = rng.randint(2, 9)
+            opp_w = rng.randint(50, 85)
+            opp_l = 143 - opp_w - opp_d
+            opp_pct = opp_w / (opp_w + opp_l)
+            standings_data.append({"team": opp, "W": opp_w, "L": opp_l, "D": opp_d, "pct": opp_pct, "is_me": False})
+
+        standings_data.sort(key=lambda x: x["pct"], reverse=True)
+        top_w = standings_data[0]["W"]
+        top_l = standings_data[0]["L"]
+        
+        my_rank = next(i for i, r in enumerate(standings_data, 1) if r["is_me"])
+        
+        html_table = f'<div style="text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; color: #111;">6チーム中 <span style="font-size: 38px;">{my_rank}位</span></div>'
+        html_table += '<div style="border-radius: 8px; overflow: hidden; border: 1px solid #E5E5E5;"><table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 15px; background-color: #FAFAFA; color: #333;">'
+        html_table += '<tr style="background-color: #EFEFEF; color: #777; font-size: 13px;"><th style="padding: 12px; font-weight: normal;">順位</th><th style="padding: 12px; text-align: left; font-weight: normal;">チーム</th><th style="padding: 12px; font-weight: normal;">勝</th><th style="padding: 12px; font-weight: normal;">敗</th><th style="padding: 12px; font-weight: normal;">分</th><th style="padding: 12px; font-weight: normal;">勝率</th><th style="padding: 12px; font-weight: normal;">差</th></tr>'
+        
+        for i, row in enumerate(standings_data, start=1):
+            bg_color = "background-color: #E8F5E9;" if row["is_me"] else ("background-color: #FFF;" if i % 2 == 0 else "")
+            t_name = f'<span style="color: #2E7D32;">{row["team"]} 自分</span>' if row["is_me"] else row["team"]
+            gb = ((top_w - row["W"]) + (row["L"] - top_l)) / 2.0
+            gb_str = "－" if gb == 0 else f"{gb:.1f}"
+            pct_str = fmt_pct(row["pct"])
+            
+            html_table += f'<tr style="border-top: 1px solid #E5E5E5; {bg_color}"><td style="padding: 12px; color: #555;">{i}</td><td style="padding: 12px; text-align: left; font-weight: bold;">{t_name}</td><td style="padding: 12px;">{row["W"]}</td><td style="padding: 12px;">{row["L"]}</td><td style="padding: 12px;">{row["D"]}</td><td style="padding: 12px; font-weight: bold;">{pct_str}</td><td style="padding: 12px; color: #666;">{gb_str}</td></tr>'
+        
+        html_table += '</table></div>'
+        html_table += '<div style="font-size: 13px; color: #777; margin-top: 15px; line-height: 1.6;">どのチームも143試合。勝率は引き分けを除いて計算しています（勝÷（勝＋敗））。<br>「差」は首位とのゲーム差です。<br>※自分以外の5球団の成績は、このゲームによる架空のシミュレーションです。</div>'
+        
+        st.markdown(html_table, unsafe_allow_html=True)
+        st.markdown("<br><br>", unsafe_allow_html=True)
+
+        log_df = pd.DataFrame(result["game_log"])
+        with st.expander("全試合ログを表示"):
+            st.dataframe(log_df, hide_index=True, use_container_width=True, height=300)
             st.download_button("試合結果CSV", log_df.to_csv(index=False).encode("utf-8-sig"), file_name="game_results.csv", mime="text/csv")
+
 
     # シーズン終了演出
     wins = result["wins"]
@@ -1729,33 +1721,24 @@ elif st.session_state.step == "result":
     draws = result["draws"]
     win_pct = wins / (wins + losses) if (wins + losses) > 0 else 0
     
-    # 7チーム制と仮定した簡易順位算出
-    if wins >= 85: rank = 1
-    elif wins >= 78: rank = 2
-    elif wins >= 72: rank = 3
-    elif wins >= 66: rank = 4
-    elif wins >= 60: rank = 5
-    elif wins >= 50: rank = 6
-    else: rank = 7
-    
-    if rank == 1:
+    if my_rank == 1:
         cs_text = "見事リーグ優勝を果たしました！"
-    elif rank <= 3:
+    elif my_rank <= 3:
         cs_text = "見事CS進出を果たしました！"
     else:
         cs_text = "CS進出はなりませんでした。"
 
     st.markdown(f"""
     <div class="season-end-wrap">
-    7チーム中{rank}位。{cs_text}
+    6チーム中{my_rank}位。{cs_text}
     </div>
 
     <div class="season-end-box">
         <div class="se-sub">１４３試合を終えて</div>
         <div class="se-main">シーズン終了</div>
         <div class="se-stats">
-            <div class="se-rank-label">7チーム中</div>
-            <div class="se-rank-val">{rank}位</div>
+            <div class="se-rank-label">6チーム中</div>
+            <div class="se-rank-val">{my_rank}位</div>
             <div class="se-rec">{wins}勝 {losses}敗 {draws}分</div>
             <div class="se-rec">勝率 {fmt_pct(win_pct)}</div>
         </div>
