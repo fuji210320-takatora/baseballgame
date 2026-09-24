@@ -118,7 +118,7 @@ class Pitcher(Player):
         self.stamina = stamina
         self.pitches = pitches
         self.pitcher_role = "中継ぎ"
-        self.stats = {"防御率": 0.0, "勝利": 0, "敗北": 0, "セーブ": 0, "投球回": 0}
+        self.stats = {"防御率": 0.0, "勝利": 0, "敗北": 0, "セーブ": 0, "ホールド": 0, "投球回": 0}
 
 @st.cache_data
 def load_players():
@@ -163,13 +163,12 @@ def change_screen(new_screen):
 # 3. シーズン結果シミュレーション処理
 # ==========================================
 def simulate_season():
-    # 野手の能力値に基づいた143試合分の成績計算
     for b in st.session_state.my_batters:
         base_avg = 0.210 + (b.meet / 100) * 0.130 + random.uniform(-0.03, 0.03)
         b.stats["打率"] = round(max(0.150, min(0.380, base_avg)), 3)
         
         games = 143
-        ab = int(games * random.uniform(3.5, 4.2)) # 打数
+        ab = int(games * random.uniform(3.5, 4.2))
         hits = int(ab * b.stats["打率"])
         b.stats["安打"] = hits
         
@@ -178,11 +177,16 @@ def simulate_season():
         b.stats["打点"] = int(b.stats["本塁打"] * 2.8 + random.randint(15, 35))
         b.stats["盗塁"] = int((b.speed / 100) * 25 + random.randint(0, 5))
 
-    # 投手の能力値に基づいた成績計算
     for p in st.session_state.my_pitchers:
         base_era = 5.50 - (p.control / 100) * 3.0 + random.uniform(-0.6, 0.8)
         p.stats["防御率"] = round(max(1.10, min(7.50, base_era)), 2)
         
+        # 全てのキーを初期化してKeyErrorを防ぐ
+        p.stats["勝利"] = 0
+        p.stats["敗北"] = 0
+        p.stats["セーブ"] = 0
+        p.stats["ホールド"] = 0
+
         if p.pitcher_role == "先発":
             p.stats["勝利"] = int((p.stamina / 100) * 14 + random.randint(0, 5))
             p.stats["敗北"] = int((100 - p.control) / 100 * 10 + random.randint(0, 4))
@@ -309,7 +313,7 @@ elif st.session_state.screen == "draft_pitcher":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 15:
-        st.success("投手15人が揃いました！")
+        st.success("投手15人が揃えました！")
         if st.button("シーズン準備へ進む", use_container_width=True, type="primary"):
             change_screen("setup")
     else:
@@ -356,6 +360,8 @@ elif st.session_state.screen == "setup":
     for idx, b in enumerate(st.session_state.my_batters):
         if not hasattr(b, 'temp_order') or b.temp_order is None:
             b.temp_order = idx + 1
+        if not hasattr(b, 'temp_position'):
+            b.temp_position = positions_list[idx % len(positions_list)]
 
     sorted_batters = sorted(st.session_state.my_batters, key=lambda x: x.temp_order)
 
@@ -377,7 +383,22 @@ elif st.session_state.screen == "setup":
 
             with col_card:
                 st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
-                batter.position = st.selectbox("守備位置選択", positions_list, index=0, label_visibility="collapsed", key=f"pos_{batter.name}")
+                
+                # 現在のポジションのインデックスを取得
+                try:
+                    pos_idx = positions_list.index(batter.temp_position)
+                except ValueError:
+                    pos_idx = 0
+
+                new_pos = st.selectbox(
+                    "守備位置選択", 
+                    positions_list, 
+                    index=pos_idx, 
+                    label_visibility="collapsed", 
+                    key=f"pos_{batter.name}"
+                )
+                batter.temp_position = new_pos
+                batter.position = new_pos
 
     st.session_state.my_batters = sorted_batters
 
@@ -401,7 +422,7 @@ elif st.session_state.screen == "result":
     st.markdown("<h3 style='text-align: center; color: #666;'>143試合 シーズン個人成績</h3>", unsafe_allow_html=True)
     st.write("---")
     
-    tab1, tab2 = st.tabs(["⚾ 野手成績", "投 投手成績"])
+    tab1, tab2 = st.tabs(["⚾ 野手成績", "投手成績"])
     
     with tab1:
         st.subheader("野手 個人成績")
