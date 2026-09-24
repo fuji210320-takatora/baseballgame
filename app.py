@@ -698,6 +698,8 @@ class PitchingState:
         self.appearance_start_outs = {}
         self.hold_eligible = {}
         self.save_eligible = False
+        self.game_pitchers = []
+        self.game_holds = []
         self.pitcher_runs = defaultdict(int)  # key: id(Player)
         self.pitcher_earned = defaultdict(int)  # key: id(Player)
 
@@ -709,6 +711,7 @@ class PitchingState:
         self.appearance_start_outs[id(self.current)] = self.current.pitching.outs
         self.current.pitching.G += 1
         self.current.pitching.GS += 1
+        self.game_pitchers.append(self.current)
         return self.current
 
     def _available_bullpen(self):
@@ -812,11 +815,13 @@ class PitchingState:
         if old in self.bullpen and entered_score_diff is not None:
             if entered_score_diff > 0 and score_diff > 0 and old is not self.closer:
                 old.pitching.HLD += 1
+                self.game_holds.append(old)
 
         if new not in self.used_bullpen and new in self.bullpen:
             self.used_bullpen.append(new)
 
         new.pitching.G += 1
+        self.game_pitchers.append(new)
         self.current = new
         self.current_start_outs = 0
         self.appearance_start_outs[id(new)] = new.pitching.outs
@@ -1009,6 +1014,17 @@ def simulate_game(
     my_batting_index = [0]
     op_batting_index = [0]
 
+    # 野手の出場試合数は、実際にその試合で打席に立つ選手へ1試合につき1だけ加算。
+    for p, _ in my_lineup:
+        p.batting.G += 1
+    for p, _ in op_lineup:
+        p.batting.G += 1
+
+    # セ・リーグでは投手も打席に立つ。
+    if league == "セ・リーグ":
+        my_pitcher.batting.G += 1
+        op_pitcher.batting.G += 1
+
     # 9回＋延長最大3回
     for inning in range(1, 13):
 
@@ -1112,12 +1128,45 @@ def simulate_game(
             break
 
     # 勝敗・勝利投手・セーブ。
-    # リリーフに交代した場合は、その試合で最後に投げて勝利を確定させた投手を勝利投手とする簡易ルール。
+    # 勝利投手は簡易ルール：
+    # 1) 自チームが勝っていること。
+    # 2) 先発が5回以上（15アウト以上）なら先発に勝ち。
+    # 3) それ以外は、その試合で最も多く投げた投手に勝ち。
+    #    投球回が並んだ場合はランダム。
     if my_score > op_score:
-        my_pitcher.pitching.W += 1
-        if my_pitcher is my_pitching.closer and my_pitching.save_eligible:
+        starter = my_pitching.starters[game_number % len(my_pitching.starters)] if my_pitching.starters else None
+        starter_outs = 0
+        if starter is not None:
+            starter_outs = starter.pitching.outs - my_pitching.appearance_start_outs.get(id(starter), starter.pitching.outs)
+
+        if starter is not None and starter_outs >= 15:
+            winning_pitcher = starter
+        else:
+            pitcher_outs = []
+            for p in my_pitching.game_pitchers:
+                outs_p = p.pitching.outs - my_pitching.appearance_start_outs.get(id(p), p.pitching.outs)
+                pitcher_outs.append((p, outs_p))
+            max_outs = max((outs_p for _, outs_p in pitcher_outs), default=0)
+            candidates = [p for p, outs_p in pitcher_outs if outs_p == max_outs]
+            winning_pitcher = random.choice(candidates) if candidates else starter
+
+        if winning_pitcher is not None:
+            winning_pitcher.pitching.W += 1
+
+            # 勝利投手には、この試合のホールドを付けない。
+            if winning_pitcher in my_pitching.game_holds:
+                winning_pitcher.pitching.HLD -= 1
+                my_pitching.game_holds.remove(winning_pitcher)
+
+            # 勝利投手にはセーブを付けない。
+            if winning_pitcher is my_pitching.closer:
+                my_pitching.save_eligible = False
+
+        # 最終投手がクローザーで、勝利投手ではない場合だけセーブ。
+        if my_pitcher is my_pitching.closer and my_pitching.save_eligible and my_pitcher is not winning_pitcher:
             my_pitcher.pitching.SV += 1
-        return my_score, op_score, {"result": "W"}
+
+        return my_score, op_score, {"result": "W", "winning_pitcher": winning_pitcher}
     elif my_score < op_score:
         my_pitcher.pitching.L += 1
         return my_score, op_score, {"result": "L"}
@@ -1478,16 +1527,43 @@ def pitching_page(pitchers):
         st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1人が必要です。")
         return None
 
+    # 初回だけ自動初期配置。
+    # 先発はスタミナ上位6人、残りはランダムで中継ぎ8人＋抑え1人へ。
+    default_key = "pitching_defaults"
+    if default_key not in st.session_state:
+        stamina_sorted = sorted(
+            pitchers,
+            key=lambda p: p.stamina,
+            reverse=True,
+        )
+        default_starters = stamina_sorted[:6]
+        remaining = stamina_sorted[6:]
+        random.shuffle(remaining)
+        default_bullpen = remaining[:8]
+        default_closer = remaining[8]
+        st.session_state[default_key] = {
+            "starters": [p.name for p in default_starters],
+            "bullpen": [p.name for p in default_bullpen],
+            "closer": default_closer.name,
+        }
+
+    defaults = st.session_state[default_key]
+
+    def player_by_name(name):
+        return next(x for x in pitchers if x.name == name)
+
     starters = []
     st.subheader("先発6人")
     for i in range(6):
+        default_name = defaults["starters"][i]
+        index = names.index(default_name) if default_name in names else 0
         selected_name = st.selectbox(
             f"先発{i + 1}",
             names,
+            index=index,
             key=f"starter_{i}",
         )
-        p = next(x for x in pitchers if x.name == selected_name)
-        starters.append(p)
+        starters.append(player_by_name(selected_name))
 
     bullpen = []
     bullpen_roles = {}
@@ -1504,22 +1580,28 @@ def pitching_page(pitchers):
 
     st.subheader("中継ぎ8人")
     for i, (label, role) in enumerate(zip(role_labels, role_values)):
+        default_name = defaults["bullpen"][i]
+        index = names.index(default_name) if default_name in names else 0
         selected_name = st.selectbox(
             f"{label}（{role}）",
             names,
+            index=index,
             key=f"bullpen_{i}",
         )
-        p = next(x for x in pitchers if x.name == selected_name)
+        p = player_by_name(selected_name)
         bullpen.append(p)
         bullpen_roles[id(p)] = role
 
     st.subheader("抑え1人")
+    closer_default = defaults["closer"]
+    closer_index = names.index(closer_default) if closer_default in names else 0
     closer_name = st.selectbox(
         "抑え",
         names,
+        index=closer_index,
         key="closer",
     )
-    closer = next(x for x in pitchers if x.name == closer_name)
+    closer = player_by_name(closer_name)
 
     chosen = starters + bullpen + [closer]
     duplicates = len(chosen) != len(set(id(p) for p in chosen))
