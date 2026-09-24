@@ -3,7 +3,7 @@ import pandas as pd
 import random
 
 # ==========================================
-# 0. カスタムCSSの定義（強制的な左右分割と正方形デザイン）
+# 0. カスタムCSSの定義（元のデザイン・色合い・正方形プルダウンを完全再現）
 # ==========================================
 def inject_custom_css():
     st.markdown("""
@@ -29,7 +29,13 @@ def inject_custom_css():
     .player-name { font-size: 28px; font-weight: 900; margin: 0 0 4px 0; color: #222;}
     .player-sub { font-size: 13px; color: #666; margin-bottom: 16px; }
     
-    .attr-container { display: flex; justify-content: space-between; margin-top: 8px; gap: 4px;}
+    /* 一軍・二軍の成績行 */
+    .stats-row { background: #f9f9f6; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 8px; display: flex; align-items: center;}
+    .stats-badge { background: #2a6642; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 12px; font-weight: bold;}
+    .stats-badge-sub { background: #dcdcdc; color: #333; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 12px; font-weight: bold;}
+
+    /* 能力値（ミート、パワー等）のボックス */
+    .attr-container { display: flex; justify-content: space-between; margin-top: 16px; gap: 4px;}
     .attr-box { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 4px; text-align: center; flex: 1; background: #fafafa;}
     .attr-label { font-size: 10px; color: #666; margin-bottom: 2px;}
     .attr-grade { font-size: 22px; font-weight: 900; margin-bottom: 2px;}
@@ -65,7 +71,7 @@ def inject_custom_css():
         font-size: 18px !important;
     }
 
-    /* 左右レイアウトの強制固定（画面幅によらず左カラムを狭く、右を広く） */
+    /* セットアップ画面の左右レイアウト強制固定 */
     div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
@@ -216,7 +222,7 @@ elif st.session_state.screen == "draft_batter":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 9:
-        st.success("野手9人が揃いました！")
+        st.success("野手9人が揃えました！")
         if st.button("投手の獲得へ進む", use_container_width=True, type="primary"):
             change_screen("draft_pitcher")
     else:
@@ -230,13 +236,21 @@ elif st.session_state.screen == "draft_batter":
 <div class='player-pos-badge'>野手</div>
 <h2 class='player-name'>{player.name}</h2>
 <div class='player-sub'>所属: {player.team}</div>
+
+<div class='stats-row'>
+    <span class='stats-badge'>一軍</span> 打率 .249 &nbsp; 本 0 &nbsp; 点 5 &nbsp; OPS .646
+</div>
+<div class='stats-row'>
+    <span class='stats-badge-sub'>二軍</span> 打率 .346 &nbsp; 本 0 &nbsp; 点 5 &nbsp; OPS .842
+</div>
+
 <div class='attr-container'>
-<div class='attr-box'><div class='attr-label'>ミート</div><div class='attr-grade {m_cls}'>{m_grade}</div><div class='attr-val'>{player.meet}</div></div>
-<div class='attr-box'><div class='attr-label'>パワー</div><div class='attr-grade {p_cls}'>{p_grade}</div><div class='attr-val'>{player.power}</div></div>
-<div class='attr-box'><div class='attr-label'>走力</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.speed}</div></div>
+    <div class='attr-box'><div class='attr-label'>ミート</div><div class='attr-grade {m_cls}'>{m_grade}</div><div class='attr-val'>{player.meet}</div></div>
+    <div class='attr-box'><div class='attr-label'>パワー</div><div class='attr-grade {p_cls}'>{p_grade}</div><div class='attr-val'>{player.power}</div></div>
+    <div class='attr-box'><div class='attr-label'>走力</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.speed}</div></div>
 </div>
 <div style='margin-top: 16px; font-size: 13px; color: #555; border-top: 1px dashed #ddd; padding-top: 12px;'>
-守れる所： <b>{player.defense}</b>
+    守れる所： <b>{player.defense}</b>
 </div>
 </div>
 """
@@ -284,12 +298,17 @@ elif st.session_state.screen == "draft_pitcher":
 <div class='player-pos-badge'>投手</div>
 <h2 class='player-name'>{player.name}</h2>
 <div class='player-sub'>所属: {player.team}</div>
+
+<div class='stats-row'>
+    <span class='stats-badge'>一軍</span> 防御率 2.52 &nbsp; 奪三振 32
+</div>
+
 <div class='attr-container'>
-<div class='attr-box'><div class='attr-label'>制球</div><div class='attr-grade {c_cls}'>{c_grade}</div><div class='attr-val'>{player.control}</div></div>
-<div class='attr-box'><div class='attr-label'>スタミナ</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.stamina}</div></div>
+    <div class='attr-box'><div class='attr-label'>制球</div><div class='attr-grade {c_cls}'>{c_grade}</div><div class='attr-val'>{player.control}</div></div>
+    <div class='attr-box'><div class='attr-label'>スタミナ</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.stamina}</div></div>
 </div>
 <div style='margin-top: 16px; font-size: 12px; color: #555; border-top: 1px dashed #ddd; padding-top: 12px; line-height: 1.5;'>
-球種： <b>{player.pitches}</b>
+    球種： <b>{player.pitches}</b>
 </div>
 </div>
 """
