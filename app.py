@@ -1581,7 +1581,7 @@ elif st.session_state.step == "season":
 elif st.session_state.step == "result":
     result = st.session_state.season_result
 
-    # 共通CSSのインジェクション[cite: 4, 5]
+    # 共通CSSのインジェクション
     st.markdown("""
     <style>
     .disclaimer-box { font-size: 11px; color: #888; background-color: #f9f9f9; padding: 12px; border: 1px solid #eee; margin-bottom: 20px; line-height: 1.5; }
@@ -1653,7 +1653,7 @@ elif st.session_state.step == "result":
 
     tab_bat, tab_pitch, tab_log = st.tabs(["打撃成績", "投球成績", "順位表"])
 
-    # 打撃成績 HTML生成[cite: 4]
+    # 打撃成績 HTML生成
     html_bat = '<div class="stats-container">'
     batters_to_show = list(st.session_state.my_lineup)
     if st.session_state.my_bench:
@@ -1677,36 +1677,9 @@ elif st.session_state.step == "result":
         if pos == "DH" or pos == "代打": 
             uzr_str = "－"
         
-        # 簡易的なwRC+の計算(リーグ平均OPSを.700と仮定)
-        wrc_plus = int((ops_val / 0.700) * 100) if p.batting.PA > 0 else 0
-        
-        html_bat += f"""
-        <div class="stats-row">
-            <div class="player-hdr">
-                <div class="p-order">{order_str}</div>
-                <div class="p-icon" style="background-color: {color};">{icon_char}</div>
-                <div class="p-name-container">
-                    <div class="p-fullname">{p.name}</div>
-                    <div class="p-pos">{jp_pos}</div>
-                </div>
-            </div>
-            <div class="main-stats">
-                <div class="ms-item"><span class="ms-label">打率</span><span class="ms-val">{avg_str}</span></div>
-                <div class="ms-item"><span class="ms-label">本塁打</span><span class="ms-val-small">{p.batting.HR}</span></div>
-                <div class="ms-item"><span class="ms-label">打点</span><span class="ms-val-small">{p.batting.RBI}</span></div>
-                <div class="ms-item"><span class="ms-label">盗塁</span><span class="ms-val-small">{p.batting.SB}</span></div>
-                <div class="ms-item"><span class="ms-label">OPS</span><span class="ms-val">{ops_str}</span></div>
-            </div>
-            <div class="sub-stats">
-                <div class="ss-item">試合<b>{p.batting.G}</b></div>
-                <div class="ss-item">打席<b>{p.batting.PA}</b></div>
-                <div class="ss-item">打数<b>{p.batting.AB}</b></div>
-                <div class="ss-item">安打<b>{p.batting.H}</b></div>
-                <div class="ss-item">wRC+<b>{wrc_plus}</b></div>
-                <div class="ss-item">UZR<b>{uzr_str}</b></div>
-            </div>
-        </div>
-        """
+        # 完全にフラットなHTML文字列（Markdownでのコードブロック化を防止）
+        html_bat += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{order_str}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{jp_pos}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">打率</span><span class="ms-val">{avg_str}</span></div><div class="ms-item"><span class="ms-label">本塁打</span><span class="ms-val-small">{p.batting.HR}</span></div><div class="ms-item"><span class="ms-label">打点</span><span class="ms-val-small">{p.batting.RBI}</span></div><div class="ms-item"><span class="ms-label">盗塁</span><span class="ms-val-small">{p.batting.SB}</span></div><div class="ms-item"><span class="ms-label">OPS</span><span class="ms-val">{ops_str}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.batting.G}</b></div><div class="ss-item">打席<b>{p.batting.PA}</b></div><div class="ss-item">打数<b>{p.batting.AB}</b></div><div class="ss-item">安打<b>{p.batting.H}</b></div><div class="ss-item">UZR<b>{uzr_str}</b></div></div></div>'
+
     html_bat += '</div>'
 
     # 投球成績 HTML生成
@@ -1725,33 +1698,9 @@ elif st.session_state.step == "result":
             
         era_str = f"{era(p):.2f}"
         
-        html_pitch += f"""
-        <div class="stats-row">
-            <div class="player-hdr">
-                <div class="p-order">{i}</div>
-                <div class="p-icon" style="background-color: {color};">{icon_char}</div>
-                <div class="p-name-container">
-                    <div class="p-fullname">{p.name}</div>
-                    <div class="p-pos">{role_str}</div>
-                </div>
-            </div>
-            <div class="main-stats">
-                <div class="ms-item"><span class="ms-label">防御率</span><span class="ms-val">{era_str}</span></div>
-                <div class="ms-item"><span class="ms-label">勝</span><span class="ms-val-small">{p.pitching.W}</span></div>
-                <div class="ms-item"><span class="ms-label">敗</span><span class="ms-val-small">{p.pitching.L}</span></div>
-                <div class="ms-item"><span class="ms-label">HP</span><span class="ms-val-small">{p.pitching.HLD}</span></div>
-                <div class="ms-item"><span class="ms-label">S</span><span class="ms-val-small">{p.pitching.SV}</span></div>
-                <div class="ms-item"><span class="ms-label">奪三振</span><span class="ms-val-small">{p.pitching.SO}</span></div>
-            </div>
-            <div class="sub-stats">
-                <div class="ss-item">試合<b>{p.pitching.G}</b></div>
-                <div class="ss-item">先発<b>{p.pitching.GS}</b></div>
-                <div class="ss-item">投球回<b>{innings_str(p.pitching.outs)}</b></div>
-                <div class="ss-item">四球<b>{p.pitching.BB}</b></div>
-                <div class="ss-item">自責点<b>{p.pitching.ER}</b></div>
-            </div>
-        </div>
-        """
+        # 完全にフラットなHTML文字列（Markdownでのコードブロック化を防止）
+        html_pitch += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{i}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{role_str}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">防御率</span><span class="ms-val">{era_str}</span></div><div class="ms-item"><span class="ms-label">勝</span><span class="ms-val-small">{p.pitching.W}</span></div><div class="ms-item"><span class="ms-label">敗</span><span class="ms-val-small">{p.pitching.L}</span></div><div class="ms-item"><span class="ms-label">HP</span><span class="ms-val-small">{p.pitching.HLD}</span></div><div class="ms-item"><span class="ms-label">S</span><span class="ms-val-small">{p.pitching.SV}</span></div><div class="ms-item"><span class="ms-label">奪三振</span><span class="ms-val-small">{p.pitching.SO}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.pitching.G}</b></div><div class="ss-item">先発<b>{p.pitching.GS}</b></div><div class="ss-item">投球回<b>{innings_str(p.pitching.outs)}</b></div><div class="ss-item">四球<b>{p.pitching.BB}</b></div><div class="ss-item">自責点<b>{p.pitching.ER}</b></div></div></div>'
+
     html_pitch += '</div>'
 
     # タブ内にHTMLを展開
@@ -1759,7 +1708,6 @@ elif st.session_state.step == "result":
         st.markdown(html_bat, unsafe_allow_html=True)
         st.markdown("""
         <div class="help-text">
-        wRC+ ... 打撃をリーグ平均と比べた数字。100が平均で、大きいほど良い。<br>
         UZR ... 守備で防いだ失点。0が平均。DHの選手は守備に就かないので「－」。<br>
         成績は実績をもとに作っていますが、その年に大きく伸びたり、不調に落ちたりすることがあります。同じ選手でも毎年同じ数字にはなりません。
         </div>
@@ -1775,8 +1723,7 @@ elif st.session_state.step == "result":
         with st.expander("データダウンロード"):
             st.download_button("試合結果CSV", log_df.to_csv(index=False).encode("utf-8-sig"), file_name="game_results.csv", mime="text/csv")
 
-
-    # シーズン終了演出[cite: 5]
+    # シーズン終了演出
     wins = result["wins"]
     losses = result["losses"]
     draws = result["draws"]
