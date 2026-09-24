@@ -841,6 +841,63 @@ class PitchingState:
 # 1試合
 # ============================================================
 
+def attempt_steal(bases, offense_lineup, defense, game_state=None):
+    """
+    走者の盗塁を簡易シミュレーション。
+    ・一塁走者は二塁が空いているとき
+    ・二塁走者は三塁が空いているとき
+    ・前に走者がいる場合は企画しない
+    ・二塁走者の企画率は一塁走者より低くする
+    ・成功率は走力と捕手守備力の対戦で決める
+    """
+    catcher = defense.get("C")
+    if catcher is None:
+        return bases
+
+    candidates = []
+
+    # 一塁走者→二塁。二塁に走者がいないことが条件。
+    if bases[0] is not None and bases[1] is None:
+        candidates.append((0, 1, 0.10, 0.34))
+
+    # 二塁走者→三塁。三塁に走者がいないことが条件。
+    if bases[1] is not None and bases[2] is None:
+        candidates.append((1, 2, 0.045, 0.22))
+
+    if not candidates:
+        return bases
+
+    # 同時に複数候補がいる場合は一塁走者を優先。
+    from_base, to_base, base_attempt, speed_factor = candidates[0]
+    runner = bases[from_base]
+
+    # 走力が高いほど企画しやすい。
+    attempt_prob = base_attempt + runner.speed / 500.0
+    # 二塁走者は企画率を抑える。
+    attempt_prob = clamp(attempt_prob, 0.03, 0.34 if from_base == 0 else 0.18)
+
+    if random.random() >= attempt_prob:
+        return bases
+
+    # 捕手守備力が高いほど盗塁阻止側が有利。
+    # 走力が高いほど成功しやすい。
+    catcher_def = catcher.defense_at("C")
+    success_prob = 0.60 + (runner.speed - 60.0) / 250.0 - (catcher_def - 50.0) / 220.0
+    success_prob = clamp(success_prob, 0.35, 0.88)
+
+    if random.random() < success_prob:
+        bases[from_base] = None
+        bases[to_base] = runner
+        runner.batting.SB += 1
+    else:
+        bases[from_base] = None
+        runner.batting.CS += 1
+        if game_state is not None:
+            game_state["outs"] += 1
+
+    return bases
+
+
 def simulate_half_inning(
     offense_lineup,
     batting_index,
@@ -856,6 +913,16 @@ def simulate_half_inning(
     runs = 0
 
     while outs < 3:
+        # 打席開始前に盗塁企画。盗塁死ならこの打席は進めずアウトだけ増やす。
+        steal_state = {"outs": outs}
+        before_outs = outs
+        bases = attempt_steal(bases, offense_lineup, defense, steal_state)
+        outs = steal_state["outs"]
+        if outs > before_outs:
+            pitcher.pitching.outs += (outs - before_outs)
+        if outs >= 3:
+            break
+
         batter = offense_lineup[batting_index[0] % len(offense_lineup)]
         batting_index[0] += 1
 
@@ -1168,8 +1235,14 @@ def simulate_game(
 
         return my_score, op_score, {"result": "W", "winning_pitcher": winning_pitcher}
     elif my_score < op_score:
-        my_pitcher.pitching.L += 1
-        return my_score, op_score, {"result": "L"}
+        # 敗戦投手も簡易ルール。
+        # 「負けた状態になった後、同点に戻らないまま最後に投げていた投手」に敗を付ける。
+        # 最終投手がそのまま投げ切った場合は最終投手、途中交代した場合も
+        # その後の最後の投手へ引き継がれる。
+        losing_pitcher = my_pitcher
+        if losing_pitcher is not None:
+            losing_pitcher.pitching.L += 1
+        return my_score, op_score, {"result": "L", "losing_pitcher": losing_pitcher}
     else:
         return my_score, op_score, {"result": "D"}
 
@@ -1528,14 +1601,10 @@ def pitching_page(pitchers):
         return None
 
     # 初回だけ自動初期配置。
-    # 先発はスタミナ上位6人、残りはランダムで中継ぎ8人＋抑え1人へ。
+    # 先発はスタミナ上位6人、残り9人はランダムに中継ぎ8＋抑え1へ。
     default_key = "pitching_defaults"
     if default_key not in st.session_state:
-        stamina_sorted = sorted(
-            pitchers,
-            key=lambda p: p.stamina,
-            reverse=True,
-        )
+        stamina_sorted = sorted(pitchers, key=lambda p: p.stamina, reverse=True)
         default_starters = stamina_sorted[:6]
         remaining = stamina_sorted[6:]
         random.shuffle(remaining)
@@ -1549,20 +1618,51 @@ def pitching_page(pitchers):
 
     defaults = st.session_state[default_key]
 
+    # 投手を1人変更したとき、すでに別役割に入っている選手なら
+    # その選手と元の選手を自動的に入れ替える。
+    role_keys = [f"pitch_role_{i}" for i in range(15)]
+    default_values = defaults["starters"] + defaults["bullpen"] + [defaults["closer"]]
+
+    for key, default_name in zip(role_keys, default_values):
+        if key not in st.session_state:
+            st.session_state[key] = default_name
+
+    def swap_pitcher_role(changed_index):
+        changed_key = role_keys[changed_index]
+        new_name = st.session_state[changed_key]
+        old_name = st.session_state.get(f"pitch_role_prev_{changed_index}")
+
+        # 選択された投手が他の役割にいるなら、そこへ元の投手を移す。
+        if new_name in [st.session_state.get(k) for k in role_keys]:
+            for j, key in enumerate(role_keys):
+                if j == changed_index:
+                    continue
+                if st.session_state.get(key) == new_name:
+                    if old_name:
+                        st.session_state[key] = old_name
+                    break
+
+        st.session_state[f"pitch_role_prev_{changed_index}"] = st.session_state[changed_key]
+
     def player_by_name(name):
         return next(x for x in pitchers if x.name == name)
+
+    def role_select(index, label):
+        key = role_keys[index]
+        if f"pitch_role_prev_{index}" not in st.session_state:
+            st.session_state[f"pitch_role_prev_{index}"] = st.session_state[key]
+        return st.selectbox(
+            label,
+            names,
+            key=key,
+            on_change=swap_pitcher_role,
+            args=(index,),
+        )
 
     starters = []
     st.subheader("先発6人")
     for i in range(6):
-        default_name = defaults["starters"][i]
-        index = names.index(default_name) if default_name in names else 0
-        selected_name = st.selectbox(
-            f"先発{i + 1}",
-            names,
-            index=index,
-            key=f"starter_{i}",
-        )
+        selected_name = role_select(i, f"先発{i + 1}")
         starters.append(player_by_name(selected_name))
 
     bullpen = []
@@ -1579,44 +1679,24 @@ def pitching_page(pitchers):
     ]
 
     st.subheader("中継ぎ8人")
-    for i, (label, role) in enumerate(zip(role_labels, role_values)):
-        default_name = defaults["bullpen"][i]
-        index = names.index(default_name) if default_name in names else 0
-        selected_name = st.selectbox(
-            f"{label}（{role}）",
-            names,
-            index=index,
-            key=f"bullpen_{i}",
-        )
+    for i, (label, role) in enumerate(zip(role_labels, role_values), start=6):
+        selected_name = role_select(i, f"{label}（{role}）")
         p = player_by_name(selected_name)
         bullpen.append(p)
         bullpen_roles[id(p)] = role
 
     st.subheader("抑え1人")
-    closer_default = defaults["closer"]
-    closer_index = names.index(closer_default) if closer_default in names else 0
-    closer_name = st.selectbox(
-        "抑え",
-        names,
-        index=closer_index,
-        key="closer",
-    )
+    closer_name = role_select(14, "抑え")
     closer = player_by_name(closer_name)
 
     chosen = starters + bullpen + [closer]
     duplicates = len(chosen) != len(set(id(p) for p in chosen))
 
     if duplicates:
-        st.warning(
-            "同じ投手が複数の役割に設定されています。"
-            "先発6・中継ぎ8・抑え1をそれぞれ別の投手にしてください。"
-        )
+        st.error("投手の入れ替え処理で重複が残りました。画面を再読み込みしてください。")
+        return None
 
     if st.button("投手起用決定", type="primary"):
-        if duplicates:
-            st.error("投手の重複を解消してから決定してください。")
-            return None
-
         return {
             "starters": starters,
             "bullpen": bullpen,
