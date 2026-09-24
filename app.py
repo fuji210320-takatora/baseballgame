@@ -128,7 +128,7 @@ def change_screen(new_screen):
 # 3. 画面描画ロジック
 # ==========================================
 
-# ドラフト画面専用ボタンCSS（取る・見送るボタンを大きく色付けする）
+# ドラフト画面専用ボタンCSS
 draft_button_css = """
 <style>
 div[data-testid="column"]:nth-of-type(1) button {
@@ -138,6 +138,37 @@ div[data-testid="column"]:nth-of-type(1) button {
 div[data-testid="column"]:nth-of-type(2) button {
     background-color: #2a6642 !important; color: white !important;
     height: 60px !important; font-size: 18px !important; font-weight: bold !important; border-radius: 8px !important; border: none !important;
+}
+</style>
+"""
+
+# セットアップ画面専用CSS（スマホの縦積みを防止し、幅を固定する）
+setup_css = """
+<style>
+/* △▽ボタンのサイズ調整 */
+div[data-testid="column"]:nth-of-type(1) button {
+    padding: 0px !important;
+    min-height: 32px !important;
+    height: 32px !important;
+    width: 100% !important;
+}
+
+/* スマホで縦積みになるのを防ぎ、左側の幅を固定する */
+@media (max-width: 768px) {
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
+        flex: 0 0 60px !important;
+        width: 60px !important;
+        min-width: 60px !important;
+        margin-right: 12px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {
+        flex: 1 1 auto !important;
+        width: calc(100% - 72px) !important;
+    }
 }
 </style>
 """
@@ -277,17 +308,7 @@ elif st.session_state.screen == "draft_pitcher":
 
 # --- ④ シーズン開始前 (打順・起用法セットアップ) ---
 elif st.session_state.screen == "setup":
-    # 枠内のボタン（△▽）の余白を消してコンパクトにするCSS
-    st.markdown("""
-    <style>
-    button[kind="secondary"] {
-        padding: 0px !important;
-        min-height: 36px !important;
-        height: 36px !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
+    st.markdown(setup_css, unsafe_allow_html=True)
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-bottom: 24px;'>打順・守備位置</h2>", unsafe_allow_html=True)
     
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
@@ -295,7 +316,7 @@ elif st.session_state.screen == "setup":
     # 野手の打順設定
     for i, batter in enumerate(st.session_state.my_batters):
         with st.container(border=True):
-            # 左カラム(20%) に△・打順・▽を、右カラム(80%) に名前・守備を配置
+            # デスクトップ用には [1, 9] などでも可、スマホ用にはCSSで幅を強制指定しています
             col_btn, col_card = st.columns([2, 8])
             
             with col_btn:
@@ -305,7 +326,7 @@ elif st.session_state.screen == "setup":
                         st.session_state.my_batters[i], st.session_state.my_batters[i-1] = st.session_state.my_batters[i-1], st.session_state.my_batters[i]
                         st.rerun()
                 else:
-                    st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
+                    st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
                 
                 # 打順番号
                 st.markdown(f"<div style='text-align: center; font-size: 24px; font-weight: bold; margin: 4px 0;'>{i+1}<span style='font-size:12px; display:block;'>番</span></div>", unsafe_allow_html=True)
@@ -316,7 +337,7 @@ elif st.session_state.screen == "setup":
                         st.session_state.my_batters[i], st.session_state.my_batters[i+1] = st.session_state.my_batters[i+1], st.session_state.my_batters[i]
                         st.rerun()
                 else:
-                    st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
+                    st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
 
             with col_card:
                 # 右側の名前とセレクトボックス
