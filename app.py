@@ -274,6 +274,7 @@ def play_game(home, away):
         if away_pitcher:
             away_runs, away_batting_index = play_half_inning(away, home_pitcher, away_batting_index)
             home_score += away_runs
+            away_pitcher.stats["earned_runs"] += away_runs  # 投手の失点を加算
 
         if inning >= 9 and home_score > away_score:
             break
@@ -281,6 +282,7 @@ def play_game(home, away):
         if home_pitcher:
             home_runs, home_batting_index = play_half_inning(home, away_pitcher, home_batting_index)
             away_score += home_runs
+            home_pitcher.stats["earned_runs"] += home_runs  # 投手の失点を加算
 
         if inning >= 9 and home_score != away_score:
             break
@@ -384,7 +386,6 @@ def load_pool_players():
                 breaking_balls=bb
             ))
     except Exception:
-        # Excelファイルがない場合のフォールバック（自動生成ダミーデータ）
         family_names = ["佐藤", "鈴木", "高橋", "田中", "伊藤", "渡辺", "山本", "中村", "小林", "加藤", "吉田", "山田", "佐々木", "山口", "松本"]
         first_names = ["翔", "大輝", "蓮", "陽翔", "樹", "湊", "新", "朝陽", "悠真", "律", "結衣", "陽葵", "澪", "紬", "芽依"]
         teams = ["東京", "大阪", "名古屋", "福岡", "札幌", "仙台"]
@@ -542,7 +543,7 @@ elif st.session_state.screen == "draft_pitcher":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 15:
-        st.success("投手15人が揃いました！")
+        st.success("投手15人が揃えました！")
         if st.button("シーズン準備へ進む", use_container_width=True, type="primary"):
             change_screen("setup")
     else:
@@ -635,7 +636,6 @@ elif st.session_state.screen == "setup":
             
         all_teams = [my_team] + dummy_teams
         
-        # ペナントレース実行（日程ループの重複カウントを修正）
         n = len(all_teams)
         games_per_pair = GAMES_PER_SEASON // (n - 1)
         
@@ -647,7 +647,6 @@ elif st.session_state.screen == "setup":
                 team_a = all_teams[i]
                 team_b = all_teams[j]
                 for g in range(games_per_pair):
-                    # ホームとビジターを交互に入れ替えて対戦
                     if g % 2 == 0:
                         play_game(team_a, team_b)
                     else:
@@ -682,7 +681,7 @@ elif st.session_state.screen == "result":
                 "選手名": b.name,
                 "所属": b.team,
                 "打率": f"{avg:.3f}",
-                "打席": b.stats["plate_appearances"],  # 「試合」ラベルを正しい「打席」に変更
+                "打席": b.stats["plate_appearances"],
                 "安打": hits,
                 "本塁打": b.stats["homeruns"],
                 "打点": b.stats["rbis"],
