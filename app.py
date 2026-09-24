@@ -569,7 +569,7 @@ elif st.session_state.screen == "draft_batter":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 9:
-        st.success("野手9人が揃いました！")
+        st.success("野手9人が揃えました！")
         if st.button("投手の獲得へ進む", use_container_width=True, type="primary"):
             change_screen("draft_pitcher")
     else:
@@ -665,11 +665,13 @@ elif st.session_state.screen == "setup":
     st.session_state.team_name = st.text_input("チーム名", value=st.session_state.team_name, max_chars=12)
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
     
+    # 初回初期化：打順1〜9を被りなく割り振り、守備位置も捕手〜右翼手等を被りなく割り振る
     for idx, b in enumerate(st.session_state.my_batters):
         if not hasattr(b, 'temp_order') or b.temp_order is None:
             b.temp_order = idx + 1
-        if not hasattr(b, 'temp_position'):
+        if not hasattr(b, 'temp_position') or b.temp_position is None:
             b.temp_position = positions_list[idx % len(positions_list)]
+            b.position = b.temp_position
 
     sorted_batters = sorted(st.session_state.my_batters, key=lambda x: x.temp_order)
 
@@ -681,7 +683,12 @@ elif st.session_state.screen == "setup":
                     "打順選択", range(1, 10), index=batter.temp_order - 1, 
                     key=f"order_sel_{batter.name}", label_visibility="collapsed"
                 )
+                # 打順が変更された場合、他の選手とスワップ（入れ替え）する処理
                 if new_order != batter.temp_order:
+                    for other_b in st.session_state.my_batters:
+                        if other_b != batter and other_b.temp_order == new_order:
+                            other_b.temp_order = batter.temp_order
+                            break
                     batter.temp_order = new_order
                     st.rerun()
             with col_card:
@@ -697,7 +704,7 @@ elif st.session_state.screen == "setup":
                 batter.temp_position = new_pos
                 batter.position = new_pos
 
-    st.session_state.my_batters = sorted_batters
+    st.session_state.my_batters = sorted(st.session_state.my_batters, key=lambda x: x.temp_order)
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
     roles_list = ["先発", "セットアッパー", "抑え", "僅差", "ビハインド"]
@@ -738,12 +745,18 @@ elif st.session_state.screen == "setup":
         for team in all_teams:
             team.reset_stats()
             
-        # 143試合の総当たりスケジュールを正しく回す（インフレ防止）
-        total_games = GAMES_PER_SEASON
-        for _ in range(total_games):
-            team_a, team_b = random.sample(all_teams, 2)
-            if team_a != team_b:
-                play_game(team_a, team_b)
+        n = len(all_teams)
+        games_per_opponent = GAMES_PER_SEASON // (n - 1)
+        
+        for i in range(n):
+            for j in range(i + 1, n):
+                team_a = all_teams[i]
+                team_b = all_teams[j]
+                for g in range(games_per_opponent):
+                    if g % 2 == 0:
+                        play_game(team_a, team_b)
+                    else:
+                        play_game(team_b, team_a)
                     
         st.session_state.sim_my_team = my_team
         sorted_teams = sorted(all_teams, key=lambda t: (t.wins, t.runs_for - t.runs_against), reverse=True)
