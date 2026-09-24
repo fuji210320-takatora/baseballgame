@@ -666,8 +666,8 @@ class PitchingState:
         self.current = self.starters[0] if self.starters else None
         self.current_start_outs = 0
         self.used_bullpen = []
-        self.pitcher_runs = defaultdict(int)
-        self.pitcher_earned = defaultdict(int)
+        self.pitcher_runs = defaultdict(int)  # key: id(Player)
+        self.pitcher_earned = defaultdict(int)  # key: id(Player)
 
     def choose_starter(self, game_number):
         if not self.starters:
@@ -685,7 +685,7 @@ class PitchingState:
                 return True
 
             # 疲労・大量失点時は早めに交代。
-            if self.pitcher_runs[p] >= 5:
+            if self.pitcher_runs[id(p)] >= 5:
                 return True
 
         # 8回以降はセットアップ/クローザーへ。
@@ -968,8 +968,8 @@ def simulate_game(
         op_score += r
 
         # このイニングで失点した分を投手へ。
-        my_pitching.pitcher_runs[my_pitcher] += r
-        my_pitching.pitcher_earned[my_pitcher] += r
+        my_pitching.pitcher_runs[id(my_pitcher)] += r
+        my_pitching.pitcher_earned[id(my_pitcher)] += r
         my_pitcher.pitching.R += r
         my_pitcher.pitching.ER += r
 
@@ -1007,8 +1007,8 @@ def simulate_game(
 
         my_score += r
 
-        op_pitching.pitcher_runs[op_pitcher] += r
-        op_pitching.pitcher_earned[op_pitcher] += r
+        op_pitching.pitcher_runs[id(op_pitcher)] += r
+        op_pitching.pitcher_earned[id(op_pitcher)] += r
         op_pitcher.pitching.R += r
         op_pitcher.pitching.ER += r
 
