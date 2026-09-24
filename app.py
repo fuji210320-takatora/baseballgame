@@ -179,7 +179,6 @@ def advance_runners(state, batter, bases_to_advance):
         else:
             state.bases[new_base] = runner
     
-    # 打点（RBI）の加算
     batter.stats["rbis"] += scored_count
     return scored_count
 
@@ -209,7 +208,7 @@ def handle_hit(state, batter, result):
                 runner.stats["runs"] += 1
         state.bases = [None, None, None]
         state.runs += 1
-        scored_count += 1 # 自分自身のホームラン
+        scored_count += 1
         
         batter.stats["hits"] += 1
         batter.stats["homeruns"] += 1
@@ -233,7 +232,6 @@ def handle_walk(state, batter):
     else:
         state.bases[0] = batter
     
-    # 押し出しによる打点
     if scored_count > 0:
         batter.stats["rbis"] += scored_count
 
@@ -737,21 +735,15 @@ elif st.session_state.screen == "setup":
             
         all_teams = [my_team] + dummy_teams
         
-        n = len(all_teams)
-        games_per_pair = GAMES_PER_SEASON // (n - 1)
-        
         for team in all_teams:
             team.reset_stats()
             
-        for i in range(n):
-            for j in range(i + 1, n):
-                team_a = all_teams[i]
-                team_b = all_teams[j]
-                for g in range(games_per_pair):
-                    if g % 2 == 0:
-                        play_game(team_a, team_b)
-                    else:
-                        play_game(team_b, team_a)
+        # 143試合の総当たりスケジュールを正しく回す（インフレ防止）
+        total_games = GAMES_PER_SEASON
+        for _ in range(total_games):
+            team_a, team_b = random.sample(all_teams, 2)
+            if team_a != team_b:
+                play_game(team_a, team_b)
                     
         st.session_state.sim_my_team = my_team
         sorted_teams = sorted(all_teams, key=lambda t: (t.wins, t.runs_for - t.runs_against), reverse=True)
