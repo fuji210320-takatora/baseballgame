@@ -424,7 +424,6 @@ def load_pool_players():
             
         df_p = pd.read_excel("投手能力データ_最新.xlsx")
         for _, row in df_p.iterrows():
-            # Excelの「球種ランク」列からデータを取得して辞書化
             bb = {}
             raw_bb = row.get('球種ランク', row.get('変化球', ''))
             if isinstance(raw_bb, str) and raw_bb.strip():
@@ -445,7 +444,6 @@ def load_pool_players():
                 breaking_balls=bb
             ))
     except Exception as e:
-        # Excelファイルがない場合のフォールバック（自動生成ダミーデータ）
         family_names = ["佐藤", "鈴木", "高橋", "田中", "伊藤", "渡辺", "山本", "中村", "小林", "加藤", "吉田", "山田", "佐々木", "山口", "松本"]
         first_names = ["翔", "大輝", "蓮", "陽翔", "樹", "湊", "新", "朝陽", "悠真", "律", "結衣", "陽葵", "澪", "紬", "芽依"]
         teams = ["東京", "大阪", "名古屋", "福岡", "札幌", "仙台"]
@@ -593,7 +591,7 @@ elif st.session_state.screen == "draft_batter":
                 st.session_state.pool_idx += 1
                 st.rerun()
 
-# --- ③ 投手を獲得（表示名を「変化球」に変更） ---
+# --- ③ 投手を獲得（括弧を排除したすっきりした表示に修正） ---
 elif st.session_state.screen == "draft_pitcher":
     st.markdown(draft_button_css, unsafe_allow_html=True)
     c_count = len(st.session_state.my_pitchers)
@@ -617,7 +615,8 @@ elif st.session_state.screen == "draft_pitcher":
         c_grade, c_cls = val_to_grade(player.control)
         s_grade, s_cls = val_to_grade(player.stamina)
         
-        bb_text = " / ".join([f"{k} [{v}]" for k, v in player.breaking_balls.items()]) if player.breaking_balls else "なし"
+        # ［］を外して "球種 ランク" の形に整形
+        bb_text = " / ".join([f"{k} {v}" for k, v in player.breaking_balls.items()]) if player.breaking_balls else "なし"
         
         html_card = f"""
 <div class='player-card'>
@@ -691,7 +690,7 @@ elif st.session_state.screen == "setup":
     
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         with st.container(border=True):
-            bb_text = " / ".join([f"{k} [{v}]" for k, v in pitcher.breaking_balls.items()]) if pitcher.breaking_balls else "なし"
+            bb_text = " / ".join([f"{k} {v}" for k, v in pitcher.breaking_balls.items()]) if pitcher.breaking_balls else "なし"
             st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name} <span style='font-size: 12px; font-weight: normal; color: #666;'>(変化球: {bb_text})</span></div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
             
             if i < 6:
