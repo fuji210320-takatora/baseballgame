@@ -534,7 +534,7 @@ elif st.session_state.screen == "draft_batter":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 9:
-        st.success("野手9人が揃いました！")
+        st.success("野手9人が揃えました！")
         if st.button("投手の獲得へ進む", use_container_width=True, type="primary"):
             change_screen("draft_pitcher")
     else:
@@ -680,7 +680,8 @@ elif st.session_state.screen == "setup":
     if st.button("🔥 開幕（143試合シミュレーション実行）", type="primary", use_container_width=True):
         my_team = Team(name=st.session_state.team_name, batters=st.session_state.my_batters, pitchers=st.session_state.my_pitchers)
         
-        cpu_batters = [Batter(f"CPU野手{i}", "CPU", 70, 70, 70, 70, defense=60) for i in range(1, 10)]
+        # 修正：Batterクラスの引数構造（name, team_name, contact, power, speed, defense）に合わせてCPU野手を生成
+        cpu_batters = [Batter(f"CPU野手{i}", "CPU", 70, 70, 70, 70) for i in range(1, 10)]
         cpu_pitchers = [Pitcher(f"CPU投手{i}", "CPU", 70, 70, {"slider": "C"}) for i in range(1, 10)]
         cpu_team = Team(name="CPUライバルズ", batters=cpu_batters, pitchers=cpu_pitchers)
 
