@@ -911,7 +911,7 @@ def val_to_rank(val):
     else: return "G", "#607d8b"           # 濃いグレー
 
 # ============================================================
-# ドラフト画面 (ゲーム風UIリニューアル版)
+# ドラフト画面 (ゲーム風UIリニューアル版・修正版)
 # ============================================================
 def draft_page(kind, all_players, count, skip_limit=None):
     selected_key = "draft_fielders" if kind == "野手" else "draft_pitchers"
@@ -982,10 +982,16 @@ def draft_page(kind, all_players, count, skip_limit=None):
     </style>
     """, unsafe_allow_html=True)
 
-    main_pos = list(candidate.defense.keys())[0] if candidate.defense else ("投手" if kind=="投手" else "不明")
+    if kind == "野手":
+        if candidate.defense:
+            main_pos_str = "・".join([POSITION_JP.get(pos, pos) for pos in candidate.defense.keys()])
+        else:
+            main_pos_str = "不明"
+    else:
+        main_pos_str = "投手"
     
     card_html = f'<div class="card">'
-    card_html += f'<div class="p-tag">{POSITION_JP.get(main_pos, main_pos)}</div>'
+    card_html += f'<div class="p-tag">{main_pos_str}</div>'
     card_html += f'<div class="p-name">{candidate.name}</div>'
     card_html += f'<div class="p-meta">{candidate.team} 所属</div>'
     
@@ -998,13 +1004,8 @@ def draft_page(kind, all_players, count, skip_limit=None):
         
     for label, val in stats:
         rank_str, color = val_to_rank(val)
-        card_html += f'''
-        <div class="stat-item">
-            <div class="stat-label">{label}</div>
-            <div class="stat-rank" style="color: {color};">{rank_str}</div>
-            <div class="stat-val">{int(val)}</div>
-        </div>
-        '''
+        card_html += f'<div class="stat-item"><div class="stat-label">{label}</div><div class="stat-rank" style="color: {color};">{rank_str}</div><div class="stat-val">{int(val)}</div></div>'
+        
     card_html += '</div>'
 
     if kind == "野手":
@@ -1057,8 +1058,14 @@ def draft_page(kind, all_players, count, skip_limit=None):
     if selected:
         sel_html = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">'
         for p in selected:
-            m_pos = list(p.defense.keys())[0] if p.defense else ("投手" if kind=="投手" else "不明")
-            sel_html += f'<div style="background-color: #f5f5f5; border: 1px solid #ddd; padding: 5px 12px; border-radius: 6px; font-size: 13px;"><b style="color:#555;">{POSITION_JP.get(m_pos, m_pos)}</b> {p.name}</div>'
+            if kind == "野手":
+                if p.defense:
+                    m_pos = "・".join([POSITION_JP.get(pos, pos) for pos in p.defense.keys()])
+                else:
+                    m_pos = "不明"
+            else:
+                m_pos = "投手"
+            sel_html += f'<div style="background-color: #f5f5f5; border: 1px solid #ddd; padding: 5px 12px; border-radius: 6px; font-size: 13px;"><b style="color:#555;">{m_pos}</b> {p.name}</div>'
         sel_html += '</div>'
         st.markdown(sel_html, unsafe_allow_html=True)
     else:
