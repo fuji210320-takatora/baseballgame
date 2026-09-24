@@ -255,15 +255,56 @@ def play_half_inning(batting_team, pitcher, batting_index):
     pitcher.stats["innings"] += 1.0
     return state.runs, batting_index
 
-def choose_starting_pitcher(team):
-    starters = [p for p in team.pitchers if p.pitcher_role == "先発"]
-    if starters:
-        return random.choice(starters)
-    return team.pitchers[0] if team.pitchers else None
+# =========================================================
+# 投手マネジメント（スタミナと継投）
+# =========================================================
+class PitcherManager:
+    def __init__(self, team):
+        self.starters = [p for p in team.pitchers if p.pitcher_role == "先発"]
+        self.middle = [p for p in team.pitchers if p.pitcher_role == "中継ぎ"]
+        self.closers = [p for p in team.pitchers if p.pitcher_role == "抑え"]
+        
+        # 万が一役割が偏っている場合のフォールバック
+        if not self.starters:
+            self.starters = team.pitchers[:1]
+        if not self.middle:
+            self.middle = team.pitchers[1:4] if len(team.pitchers) > 1 else team.pitchers
+        if not self.closers:
+            self.closers = team.pitchers[-1:]
+            
+        self.current_pitcher = random.choice(self.starters)
+        self.innings_pitched_by_current = 0.0
+
+    def get_pitcher(self, inning):
+        # スタミナやイニングに応じた継投判断
+        # 先発のスタミナ限界目安 (例: スタミナ80なら約5〜6回)
+        starter_limit = max(3, int(self.current_pitcher.stamina / 14))
+        
+        is_tired = (self.current_pitcher.pitcher_role == "先発" and self.innings_pitched_by_current >= starter_limit)
+        is_late_inning = (inning >= 8 and self.closers)
+        
+        if is_tired or (is_late_inning and self.current_pitcher.pitcher_role != "抑え"):
+            if is_late_inning and self.closers:
+                # 抑えへ交代
+                available_closers = [p for p in self.closers if p != self.current_pitcher]
+                if available_closers:
+                    self.current_pitcher = random.choice(available_closers)
+                    self.innings_pitched_by_current = 0.0
+            elif self.middle:
+                # 中継ぎへ交代
+                available_middle = [p for p in self.middle if p != self.current_pitcher]
+                if available_middle:
+                    self.current_pitcher = random.choice(available_middle)
+                    self.innings_pitched_by_current = 0.0
+                    
+        return self.current_pitcher
+
+    def add_inning(self):
+        self.innings_pitched_by_current += 1.0
 
 def play_game(home, away):
-    home_pitcher = choose_starting_pitcher(home)
-    away_pitcher = choose_starting_pitcher(away)
+    home_mgr = PitcherManager(home)
+    away_mgr = PitcherManager(away)
 
     home_score = 0
     away_score = 0
@@ -271,18 +312,22 @@ def play_game(home, away):
     away_batting_index = 0
 
     for inning in range(1, MAX_INNINGS + 1):
-        if away_pitcher:
-            away_runs, away_batting_index = play_half_inning(away, home_pitcher, away_batting_index)
-            home_score += away_runs
-            away_pitcher.stats["earned_runs"] += away_runs  # 投手の失点を加算
+        # アウェイの攻撃（ホームの投手陣が投げる）
+        away_pitcher = home_mgr.get_pitcher(inning)
+        away_runs, away_batting_index = play_half_inning(away, away_pitcher, away_batting_index)
+        home_score += away_runs
+        away_pitcher.stats["earned_runs"] += away_runs
+        home_mgr.add_inning()
 
         if inning >= 9 and home_score > away_score:
             break
 
-        if home_pitcher:
-            home_runs, home_batting_index = play_half_inning(home, away_pitcher, home_batting_index)
-            away_score += home_runs
-            home_pitcher.stats["earned_runs"] += home_runs  # 投手の失点を加算
+        # ホームの攻撃（アウェイの投手陣が投げる）
+        home_pitcher = away_mgr.get_pitcher(inning)
+        home_runs, home_batting_index = play_half_inning(home, home_pitcher, home_batting_index)
+        away_score += home_runs
+        home_pitcher.stats["earned_runs"] += home_runs
+        away_mgr.add_inning()
 
         if inning >= 9 and home_score != away_score:
             break
@@ -292,16 +337,17 @@ def play_game(home, away):
     away.runs_for += away_score
     away.runs_against += home_score
 
+    # 勝敗・勝利投手/敗戦投手の簡易判定（最後に投げた、あるいは最も長く投げた投手などに勝利をつける）
     if home_score > away_score:
         home.wins += 1
         away.losses += 1
-        if home_pitcher: home_pitcher.stats["wins"] += 1
-        if away_pitcher: away_pitcher.stats["losses"] += 1
+        home_mgr.current_pitcher.stats["wins"] += 1
+        away_mgr.current_pitcher.stats["losses"] += 1
     elif away_score > home_score:
         away.wins += 1
         home.losses += 1
-        if away_pitcher: away_pitcher.stats["wins"] += 1
-        if home_pitcher: home_pitcher.stats["losses"] += 1
+        away_mgr.current_pitcher.stats["wins"] += 1
+        home_mgr.current_pitcher.stats["losses"] += 1
     else:
         home.draws += 1
         away.draws += 1
@@ -543,7 +589,7 @@ elif st.session_state.screen == "draft_pitcher":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 15:
-        st.success("投手15人が揃えました！")
+        st.success("投手15人が揃いました！")
         if st.button("シーズン準備へ進む", use_container_width=True, type="primary"):
             change_screen("setup")
     else:
@@ -631,7 +677,10 @@ elif st.session_state.screen == "setup":
         dummy_teams = []
         for t_idx in range(5):
             d_batters = [Batter(f"D{t_idx}_{i}", "CPU", 70, 70, 70, "捕手") for i in range(9)]
-            d_pitchers = [Pitcher(f"D{t_idx}P{i}", "CPU", 70, 70, {}) for i in range(5)]
+            d_pitchers = [
+                Pitcher(f"D{t_idx}P{i}", "CPU", 70, 70, {}, pitcher_role="先発" if i < 5 else ("中継ぎ" if i < 12 else "抑え"))
+                for i in range(15)
+            ]
             dummy_teams.append(Team(name=f"CPUチーム{t_idx+1}", batters=d_batters, pitchers=d_pitchers))
             
         all_teams = [my_team] + dummy_teams
