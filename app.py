@@ -266,7 +266,6 @@ class PitcherManager:
         self.closes = [p for p in team.pitchers if p.pitcher_role == "僅差"]
         self.behinds = [p for p in team.pitchers if p.pitcher_role == "ビハインド"]
         
-        # フォールバック（役割が偏っている場合の自動振り分け）
         if not self.starters:
             self.starters = team.pitchers[:1]
         if not self.setups:
@@ -278,27 +277,23 @@ class PitcherManager:
         self.innings_pitched_by_current = 0.0
 
     def get_pitcher(self, inning, my_score, opp_score):
-        score_diff = my_score - opp_score # プラスならリード、マイナスならビハインド
+        score_diff = my_score - opp_score
         
         # 先発のスタミナ限界目安
         starter_limit = max(3, int(self.current_pitcher.stamina / 14))
         is_tired = (self.current_pitcher.pitcher_role == "先発" and self.innings_pitched_by_current >= starter_limit)
         
-        # 継投の判断
-        should_change = is_tired or self.current_pitcher.pitcher_role == "先発" and inning >= 6
+        # 継投判断：スタミナが切れた、または先発で6回以降のときのみ交代考慮
+        should_change = is_tired or (self.current_pitcher.pitcher_role == "先発" and inning >= 6)
         
-        if should_change or self.current_pitcher.pitcher_role == "先発":
+        if should_change:
             if score_diff < 0 and self.behinds:
-                # 負けているときはビハインド専門投手
                 self.current_pitcher = random.choice(self.behinds)
-            elif inning >= 9 and score_diff >= 0 and score_diff <= 3 and self.closers:
-                # 9回以降の接戦リード時は抑え
+            elif inning >= 9 and 0 <= score_diff <= 3 and self.closers:
                 self.current_pitcher = random.choice(self.closers)
             elif inning == 8 and abs(score_diff) <= 3 and self.setups:
-                # 8回接戦時はセットアッパー
                 self.current_pitcher = random.choice(self.setups)
             elif abs(score_diff) <= 3 and self.closes:
-                # 接戦時は僅差投手
                 self.current_pitcher = random.choice(self.closes)
             elif self.setups:
                 self.current_pitcher = random.choice(self.setups)
@@ -320,7 +315,6 @@ def play_game(home, away):
     away_batting_index = 0
 
     for inning in range(1, MAX_INNINGS + 1):
-        # アウェイの攻撃（ホームの投手陣が投げる：my_score=home_score, opp_score=away_score）
         away_pitcher = home_mgr.get_pitcher(inning, home_score, away_score)
         away_runs, away_batting_index = play_half_inning(away, away_pitcher, away_batting_index)
         home_score += away_runs
@@ -330,7 +324,6 @@ def play_game(home, away):
         if inning >= 9 and home_score > away_score:
             break
 
-        # ホームの攻撃（アウェイの投手陣が投げる：my_score=away_score, opp_score=home_score）
         home_pitcher = away_mgr.get_pitcher(inning, away_score, home_score)
         home_runs, home_batting_index = play_half_inning(home, home_pitcher, home_batting_index)
         away_score += home_runs
@@ -432,7 +425,7 @@ def load_pool_players():
             ))
         df_p = pd.read_excel("投手能力データ_最新.xlsx")
         for _, row in df_p.iterrows():
-            bb = {"slider": "B", "curve": "C"}
+            bb = {"スライダー": "B", "フォーク": "C"}
             pitchers.append(Pitcher(
                 name=row['選手名'], team=row['チーム'],
                 control=row['制球'], stamina=row['スタミナ'],
@@ -454,7 +447,14 @@ def load_pool_players():
             ))
         for i in range(80):
             name = f"{random.choice(family_names)}{random.choice(first_names)}"
-            bb = {"スライダー": random.choice(["A", "B", "C"]), "フォーク": random.choice(["B", "C", "D"])}
+            # ランダムな変化球データを自動生成
+            bb_types = ["スライダー", "カーブ", "フォーク", "シュート", "チェンジアップ", "カットボール"]
+            bb_grades = ["S", "A", "B", "C", "D"]
+            bb = {}
+            for _ in range(random.randint(2, 4)):
+                t = random.choice(bb_types)
+                if t not in bb:
+                    bb[t] = random.choice(bb_grades)
             pitchers.append(Pitcher(
                 name=name, team=random.choice(teams),
                 control=random.randint(40, 95),
@@ -580,7 +580,7 @@ elif st.session_state.screen == "draft_batter":
                 st.session_state.pool_idx += 1
                 st.rerun()
 
-# --- ③ 投手を獲得 ---
+# --- ③ 投手を獲得（変化球の表示を追加） ---
 elif st.session_state.screen == "draft_pitcher":
     st.markdown(draft_button_css, unsafe_allow_html=True)
     c_count = len(st.session_state.my_pitchers)
@@ -596,13 +596,16 @@ elif st.session_state.screen == "draft_pitcher":
     st.markdown(html_status, unsafe_allow_html=True)
     
     if c_count >= 15:
-        st.success("投手15人が揃えました！")
+        st.success("投手15人が揃いました！")
         if st.button("シーズン準備へ進む", use_container_width=True, type="primary"):
             change_screen("setup")
     else:
         player = st.session_state.pitchers_pool[st.session_state.pool_idx]
         c_grade, c_cls = val_to_grade(player.control)
         s_grade, s_cls = val_to_grade(player.stamina)
+        
+        # 変化球リストをテキスト化して分かりやすく表示
+        bb_text = " / ".join([f"{k} [{v}]" for k, v in player.breaking_balls.items()]) if player.breaking_balls else "なし"
         
         html_card = f"""
 <div class='player-card'>
@@ -612,6 +615,9 @@ elif st.session_state.screen == "draft_pitcher":
 <div class='attr-container'>
     <div class='attr-box'><div class='attr-label'>制球</div><div class='attr-grade {c_cls}'>{c_grade}</div><div class='attr-val'>{player.control}</div></div>
     <div class='attr-box'><div class='attr-label'>スタミナ</div><div class='attr-grade {s_cls}'>{s_grade}</div><div class='attr-val'>{player.stamina}</div></div>
+</div>
+<div style='margin-top: 16px; font-size: 13px; color: #555; border-top: 1px dashed #ddd; padding-top: 12px;'>
+    変化球： <b>{bb_text}</b>
 </div>
 </div>
 """
@@ -669,13 +675,13 @@ elif st.session_state.screen == "setup":
     st.session_state.my_batters = sorted_batters
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
-    # 元の仕様にある5つの起用方法に完全対応
     roles_list = ["先発", "セットアッパー", "抑え", "僅差", "ビハインド"]
     
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         with st.container(border=True):
-            st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
-            # デフォルトの役割割り当て（最初の6人を先発、次にセットアッパー、抑え、僅差、ビハインドへ）
+            bb_text = " / ".join([f"{k} [{v}]" for k, v in pitcher.breaking_balls.items()]) if pitcher.breaking_balls else "なし"
+            st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name} <span style='font-size: 12px; font-weight: normal; color: #666;'>({bb_text})</span></div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
+            
             if i < 6:
                 def_index = 0
             elif i < 9:
@@ -697,7 +703,7 @@ elif st.session_state.screen == "setup":
         for t_idx in range(5):
             d_batters = [Batter(f"D{t_idx}_{i}", "CPU", 70, 70, 70, "捕手") for i in range(9)]
             d_pitchers = [
-                Pitcher(f"D{t_idx}P{i}", "CPU", 70, 70, {}, pitcher_role="先発" if i < 6 else ("セットアッパー" if i < 9 else ("抑え" if i < 11 else ("僅差" if i < 13 else "ビハインド"))))
+                Pitcher(f"D{t_idx}P{i}", "CPU", 70, 70, {"スライダー": "B"}, pitcher_role="先発" if i < 6 else ("セットアッパー" if i < 9 else ("抑え" if i < 11 else ("僅差" if i < 13 else "ビハインド"))))
                 for i in range(15)
             ]
             dummy_teams.append(Team(name=f"CPUチーム{t_idx+1}", batters=d_batters, pitchers=d_pitchers))
