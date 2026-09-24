@@ -142,32 +142,31 @@ div[data-testid="column"]:nth-of-type(2) button {
 </style>
 """
 
-# セットアップ画面専用CSS（スマホの縦積みを防止し、幅を固定する）
+# セットアップ画面専用CSS（左側カラムの幅を20pxに強制固定）
 setup_css = """
 <style>
-/* △▽ボタンのサイズ調整 */
 div[data-testid="column"]:nth-of-type(1) button {
     padding: 0px !important;
-    min-height: 32px !important;
-    height: 32px !important;
+    min-height: 28px !important;
+    height: 28px !important;
     width: 100% !important;
+    font-size: 12px !important;
 }
 
-/* スマホで縦積みになるのを防ぎ、左側の幅を固定する */
 @media (max-width: 768px) {
     div[data-testid="stHorizontalBlock"] {
         flex-direction: row !important;
         flex-wrap: nowrap !important;
     }
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
-        flex: 0 0 60px !important;
-        width: 60px !important;
-        min-width: 60px !important;
+        flex: 0 0 20px !important;
+        width: 20px !important;
+        min-width: 20px !important;
         margin-right: 12px !important;
     }
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {
         flex: 1 1 auto !important;
-        width: calc(100% - 72px) !important;
+        width: calc(100% - 32px) !important;
     }
 }
 </style>
@@ -183,7 +182,7 @@ if st.session_state.screen == "top":
 <div class='rule-box'>
 <div style='font-size: 12px; color: #666; margin-bottom: 8px;'>ルール</div>
 <div class='rule-item'><span class='rule-num'>1</span>架空の選手がポジション関係なく完全ランダムで1人ずつ登場</div>
-<div class='rule-item'><span class='rule-num'>2</span>できるのは「<b>取る</b>」か「<b>見送る</b>」だけ</div>
+<div class='rule-item'><span class='rule-num'>2</span>できるのは<b>「取る」</b>か<b>「見送る」</b>だけ</div>
 <div class='rule-item'><span class='rule-num'>3</span>まず<b>野手9人</b>（見送り5回まで）</div>
 <div class='rule-item'><span class='rule-num'>4</span>つぎに<b>投手15人</b>（先発6人・救援9人をセットで選ぶ）</div>
 <div class='rule-item'><span class='rule-num'>5</span>役割を決め、打順を組んで<b>143試合</b>を戦う</div>
@@ -316,33 +315,28 @@ elif st.session_state.screen == "setup":
     # 野手の打順設定
     for i, batter in enumerate(st.session_state.my_batters):
         with st.container(border=True):
-            # デスクトップ用には [1, 9] などでも可、スマホ用にはCSSで幅を強制指定しています
-            col_btn, col_card = st.columns([2, 8])
+            # 左カラムの幅を最小限（20px付近）にし、右側に名前とセレクトボックスを配置
+            col_btn, col_card = st.columns([1.5, 8.5])
             
             with col_btn:
-                # 1番打者以外は「△」を表示。1番打者はズレ防止の空枠
                 if i > 0:
                     if st.button("△", key=f"up_{i}", use_container_width=True):
                         st.session_state.my_batters[i], st.session_state.my_batters[i-1] = st.session_state.my_batters[i-1], st.session_state.my_batters[i]
                         st.rerun()
                 else:
-                    st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
                 
-                # 打順番号
-                st.markdown(f"<div style='text-align: center; font-size: 24px; font-weight: bold; margin: 4px 0;'>{i+1}<span style='font-size:12px; display:block;'>番</span></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='text-align: center; font-size: 18px; font-weight: bold; margin: 2px 0;'>{i+1}<span style='font-size:9px; display:block;'>番</span></div>", unsafe_allow_html=True)
                 
-                # 9番打者以外は「▽」を表示。9番打者はズレ防止の空枠
                 if i < len(st.session_state.my_batters) - 1:
                     if st.button("▽", key=f"down_{i}", use_container_width=True):
                         st.session_state.my_batters[i], st.session_state.my_batters[i+1] = st.session_state.my_batters[i+1], st.session_state.my_batters[i]
                         st.rerun()
                 else:
-                    st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
 
             with col_card:
-                # 右側の名前とセレクトボックス
-                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True) # 高さ合わせ
-                st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 12px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-top: 2px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 8px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
                 batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=i%9, label_visibility="collapsed", key=f"pos_{i}")
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
@@ -351,7 +345,7 @@ elif st.session_state.screen == "setup":
     # 投手の起用法設定
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         with st.container(border=True):
-            st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 12px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 8px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
             def_index = 0 if i < 6 else (4 if i == 14 else 1)
             pitcher.pitcher_role = st.selectbox(f"{pitcher.name}の起用法", roles_list, index=def_index, label_visibility="collapsed", key=f"role_{i}")
 
