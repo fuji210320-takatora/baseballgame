@@ -901,14 +901,14 @@ def create_schedule(my_league, same_teams, inter_teams):
 # 能力値をランクと色に変換する関数
 # ============================================================
 def val_to_rank(val):
-    if val >= 90: return "S", "#e91e63"  # ピンク
-    elif val >= 80: return "A", "#ff9800" # オレンジ
-    elif val >= 70: return "B", "#ffb300" # 黄色
-    elif val >= 60: return "C", "#fbc02d" # 薄い黄色
-    elif val >= 50: return "D", "#8bc34a" # 黄緑
-    elif val >= 40: return "E", "#03a9f4" # 水色
-    elif val >= 30: return "F", "#9e9e9e" # グレー
-    else: return "G", "#607d8b"           # 濃いグレー
+    if val >= 90: return "S", "#D4AF37"  # 金色
+    elif val >= 80: return "A", "#E91E63" # ピンク色
+    elif val >= 70: return "B", "#F44336" # 赤色
+    elif val >= 60: return "C", "#FF9800" # オレンジ色
+    elif val >= 50: return "D", "#FFD600" # 黄色
+    elif val >= 40: return "E", "#4CAF50" # 緑色
+    elif val >= 30: return "F", "#2196F3" # 青色
+    else: return "G", "#9E9E9E"           # グレー色
 
 # ============================================================
 # ドラフト画面 (ゲーム風UIリニューアル版・修正版)
