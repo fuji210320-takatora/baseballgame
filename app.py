@@ -3,17 +3,13 @@ import pandas as pd
 import random
 
 # ==========================================
-# 0. カスタムCSSの定義（スクリーンショットのデザインを再現）
+# 0. カスタムCSSの定義
 # ==========================================
 def inject_custom_css():
     st.markdown("""
     <style>
-    /* 全体の背景色をアプリに近いオフホワイトに */
-    .stApp {
-        background-color: #f7f6f0;
-    }
+    .stApp { background-color: #f7f6f0; }
     
-    /* トップページのタイトル・ルール周り */
     .title-sub { font-size: 12px; color: #888; text-align: center; letter-spacing: 2px; margin-bottom: 0; }
     .title-main { font-size: 32px; font-weight: 900; text-align: center; margin-top: 0; margin-bottom: 24px; }
     .rule-box { background: transparent; border-top: 1px solid #ddd; padding-top: 16px; font-size: 14px; }
@@ -21,7 +17,6 @@ def inject_custom_css():
     .rule-num { color: #888; font-weight: bold; margin-right: 12px; }
     .disclaimer { font-size: 11px; color: #666; background: white; padding: 12px; border: 1px solid #ddd; margin-top: 24px; }
 
-    /* 選手カードのデザイン */
     .player-card {
         background: white;
         border-radius: 12px;
@@ -34,19 +29,12 @@ def inject_custom_css():
     .player-name { font-size: 28px; font-weight: 900; margin: 0 0 4px 0; color: #222;}
     .player-sub { font-size: 13px; color: #666; margin-bottom: 16px; }
     
-    /* 1軍・2軍成績ボックス */
-    .stats-row { background: #f9f9f6; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 8px; display: flex; align-items: center;}
-    .stats-badge { background: #2a6642; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 12px; font-weight: bold;}
-    .stats-badge-sub { background: #dcdcdc; color: #333; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 12px; font-weight: bold;}
-    
-    /* 能力値（ミート、パワー等）の四角いボックス */
-    .attr-container { display: flex; justify-content: space-between; margin-top: 16px; gap: 4px;}
+    .attr-container { display: flex; justify-content: space-between; margin-top: 8px; gap: 4px;}
     .attr-box { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 4px; text-align: center; flex: 1; background: #fafafa;}
     .attr-label { font-size: 10px; color: #666; margin-bottom: 2px;}
     .attr-grade { font-size: 22px; font-weight: 900; margin-bottom: 2px;}
     .attr-val { font-size: 11px; color: #888;}
     
-    /* アルファベットの色分け */
     .grade-S { color: #e6b422; }
     .grade-A { color: #c93a3a; }
     .grade-B { color: #c25953; }
@@ -54,7 +42,6 @@ def inject_custom_css():
     .grade-D { color: #3a82c9; }
     .grade-E, .grade-F, .grade-G { color: #666; }
 
-    /* 見送り・取るボタンの配色オーバーライド */
     div[data-testid="column"]:nth-child(1) button {
         background-color: #b03535 !important;
         color: white !important;
@@ -74,16 +61,10 @@ def inject_custom_css():
         border-radius: 8px !important;
     }
     
-    /* ヘッダーのステータス表示 */
     .status-bar { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #ddd; padding-bottom: 12px; margin-bottom: 16px;}
     .status-count { font-size: 24px; font-weight: bold; }
     .status-left { font-size: 13px; color: #666; }
     .pass-pill { background: #fbebeb; color: #b03535; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: bold; border: 1px solid #fad4d4;}
-
-    /* リストアイテム（打順・起用法）のカード化 */
-    .list-card { background: white; border: 1px solid #eee; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.02);}
-    .list-num { font-size: 20px; font-weight: bold; width: 40px; text-align: center; background: #f0f0f0; padding: 8px; border-radius: 6px; margin-right: 12px;}
-    .list-info { flex: 1; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -100,16 +81,12 @@ def val_to_grade(val):
     elif val >= 30: return "F", "grade-F"
     else: return "G", "grade-G"
 
-def generate_dummy_profile():
-    prefs = ["東京都", "大阪府", "愛知県", "福岡県", "北海道", "広島県", "宮城県", "神奈川県"]
-    return random.choice(prefs), random.randint(18, 38)
-
 class Player:
     def __init__(self, name, team, role):
         self.name = name
         self.team = team
         self.role = role
-        self.pref, self.age = generate_dummy_profile()
+        self.age = random.randint(18, 38) # 年齢のみダミー生成
 
 class Batter(Player):
     def __init__(self, name, team, meet, power, speed, defense):
@@ -120,7 +97,6 @@ class Batter(Player):
         self.defense = defense
         self.batting_order = None
         self.position = None
-        self.stats = {"打率": 0.0, "本塁打": 0, "打点": 0}
 
 class Pitcher(Player):
     def __init__(self, name, team, control, stamina, pitches):
@@ -129,7 +105,6 @@ class Pitcher(Player):
         self.stamina = stamina
         self.pitches = pitches
         self.pitcher_role = "中継ぎ"
-        self.stats = {"防御率": 0.0, "勝利": 0, "敗北": 0}
 
 @st.cache_data
 def load_players():
@@ -222,19 +197,11 @@ elif st.session_state.screen == "draft_batter":
         p_grade, p_cls = val_to_grade(player.power)
         s_grade, s_cls = val_to_grade(player.speed)
         
-        # 選手カードUI
         st.markdown(f"""
         <div class='player-card'>
             <div class='player-pos-badge'>野手</div>
             <h2 class='player-name'>{player.name}</h2>
-            <div class='player-sub'>{player.pref} {player.age}歳 <br>所属: {player.team}</div>
-            
-            <div class='stats-row'>
-                <span class='stats-badge'>一軍</span> 打率 .249  本 0  点 5  OPS .646
-            </div>
-            <div class='stats-row'>
-                <span class='stats-badge-sub'>二軍</span> 打率 .346  本 0  点 5  OPS .842
-            </div>
+            <div class='player-sub'>{player.age}歳 <br>所属: {player.team}</div>
             
             <div class='attr-container'>
                 <div class='attr-box'><div class='attr-label'>ミート</div><div class='attr-grade {m_cls}'>{m_grade}</div><div class='attr-val'>{player.meet}</div></div>
@@ -285,11 +252,7 @@ elif st.session_state.screen == "draft_pitcher":
         <div class='player-card'>
             <div class='player-pos-badge'>投手</div>
             <h2 class='player-name'>{player.name}</h2>
-            <div class='player-sub'>{player.pref} {player.age}歳 <br>所属: {player.team}</div>
-            
-            <div class='stats-row'>
-                <span class='stats-badge'>一軍</span> 防御率 2.52  奪三振 32
-            </div>
+            <div class='player-sub'>{player.age}歳 <br>所属: {player.team}</div>
             
             <div class='attr-container'>
                 <div class='attr-box'><div class='attr-label'>制球</div><div class='attr-grade {c_cls}'>{c_grade}</div><div class='attr-val'>{player.control}</div></div>
@@ -325,11 +288,10 @@ elif st.session_state.screen == "setup":
             <div style='font-size: 24px; font-weight: 900; width: 40px; text-align: center; background: #f0f0f0; border-radius: 4px; padding: 8px 0; margin-right: 16px;'>{i+1}<span style='font-size:10px; display:block; font-weight: normal;'>番</span></div>
             <div style='flex: 1;'>
                 <div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{batter.name}</div>
-                <div style='font-size: 11px; color: #888;'>{batter.pref}・{batter.age}歳</div>
+                <div style='font-size: 11px; color: #888;'>{batter.age}歳</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        # セレクトボックスはHTMLに埋め込めないので通常のStreamlitウィジェットで配置
         batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=i%9, label_visibility="collapsed", key=f"pos_{i}")
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
@@ -339,7 +301,7 @@ elif st.session_state.screen == "setup":
         st.markdown(f"""
         <div style='background: white; border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px;'>
             <div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name}</div>
-            <div style='font-size: 11px; color: #888;'>{pitcher.pref}・{pitcher.age}歳</div>
+            <div style='font-size: 11px; color: #888;'>{pitcher.age}歳</div>
         </div>
         """, unsafe_allow_html=True)
         def_index = 0 if i < 6 else (4 if i == 14 else 1)
