@@ -907,7 +907,7 @@ def val_to_rank(val):
     elif val >= 60: return "C", "#FF9800" # オレンジ色
     elif val >= 50: return "D", "#FFD600" # 黄色
     elif val >= 40: return "E", "#4CAF50" # 緑色
-    elif val >= 30: return "F", "#2196F3" # 青色
+    elif val >= 20: return "F", "#2196F3" # 青色
     else: return "G", "#9E9E9E"           # グレー色
 
 # ============================================================
@@ -1373,7 +1373,7 @@ elif st.session_state.step == "draft_fielders":
 # 投手ドラフト
 # ============================================================
 elif st.session_state.step == "draft_pitchers":
-    finished = draft_page("投手", pitchers_all, 15, skip_limit=None)
+    finished = draft_page("投手", pitchers_all, 15, skip_limit=5)
     if finished:
         st.session_state.step = "league_select"
         st.rerun()
