@@ -75,8 +75,7 @@ class Batter(Player):
         self.power = power
         self.speed = speed
         self.defense = defense
-        self.batting_order = None
-        self.position = None
+        self.position = "捕手"
 
 class Pitcher(Player):
     def __init__(self, name, team, control, stamina, pitches):
@@ -138,36 +137,6 @@ div[data-testid="column"]:nth-of-type(1) button {
 div[data-testid="column"]:nth-of-type(2) button {
     background-color: #2a6642 !important; color: white !important;
     height: 60px !important; font-size: 18px !important; font-weight: bold !important; border-radius: 8px !important; border: none !important;
-}
-</style>
-"""
-
-# セットアップ画面専用CSS（左側カラムの幅を20pxに強制固定）
-setup_css = """
-<style>
-div[data-testid="column"]:nth-of-type(1) button {
-    padding: 0px !important;
-    min-height: 28px !important;
-    height: 28px !important;
-    width: 100% !important;
-    font-size: 12px !important;
-}
-
-@media (max-width: 768px) {
-    div[data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(1) {
-        flex: 0 0 20px !important;
-        width: 20px !important;
-        min-width: 20px !important;
-        margin-right: 12px !important;
-    }
-    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-of-type(2) {
-        flex: 1 1 auto !important;
-        width: calc(100% - 32px) !important;
-    }
 }
 </style>
 """
@@ -307,45 +276,48 @@ elif st.session_state.screen == "draft_pitcher":
 
 # --- ④ シーズン開始前 (打順・起用法セットアップ) ---
 elif st.session_state.screen == "setup":
-    st.markdown(setup_css, unsafe_allow_html=True)
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-bottom: 24px;'>打順・守備位置</h2>", unsafe_allow_html=True)
     
     positions_list = ["捕手", "一塁手", "二塁手", "三塁手", "遊撃手", "左翼手", "中堅手", "右翼手", "指名打者"]
     
-    # 野手の打順設定
-    for i, batter in enumerate(st.session_state.my_batters):
+    # 初回アクセス時、各野手に1〜9番を順番に割り振る
+    for idx, b in enumerate(st.session_state.my_batters):
+        if not hasattr(b, 'temp_order') or b.temp_order is None:
+            b.temp_order = idx + 1
+
+    # 変更を検知して瞬時に並び替えるロジック
+    # 各セレクトボックスの変更をチェックするために、一時的にリストをコピーしてソート
+    sorted_batters = sorted(st.session_state.my_batters, key=lambda x: x.temp_order)
+
+    for i, batter in enumerate(sorted_batters):
         with st.container(border=True):
-            # 左カラムの幅を最小限（20px付近）にし、右側に名前とセレクトボックスを配置
-            col_btn, col_card = st.columns([1.5, 8.5])
+            col_ord, col_card = st.columns([3, 7])
             
-            with col_btn:
-                if i > 0:
-                    if st.button("△", key=f"up_{i}", use_container_width=True):
-                        st.session_state.my_batters[i], st.session_state.my_batters[i-1] = st.session_state.my_batters[i-1], st.session_state.my_batters[i]
-                        st.rerun()
-                else:
-                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                
-                st.markdown(f"<div style='text-align: center; font-size: 18px; font-weight: bold; margin: 2px 0;'>{i+1}<span style='font-size:9px; display:block;'>番</span></div>", unsafe_allow_html=True)
-                
-                if i < len(st.session_state.my_batters) - 1:
-                    if st.button("▽", key=f"down_{i}", use_container_width=True):
-                        st.session_state.my_batters[i], st.session_state.my_batters[i+1] = st.session_state.my_batters[i+1], st.session_state.my_batters[i]
-                        st.rerun()
-                else:
-                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            with col_ord:
+                # 打順を選ぶプルダウン（変更した瞬間に該当の打順の場所にパッと移動します）
+                new_order = st.selectbox(
+                    f"{batter.name}の打順", 
+                    range(1, 10), 
+                    index=batter.temp_order - 1, 
+                    key=f"order_sel_{batter.name}"
+                )
+                if new_order != batter.temp_order:
+                    batter.temp_order = new_order
+                    st.rerun()
 
             with col_card:
-                st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-top: 2px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 8px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
-                batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=i%9, label_visibility="collapsed", key=f"pos_{i}")
+                st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{batter.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {batter.team}</div>", unsafe_allow_html=True)
+                batter.position = st.selectbox(f"{batter.name}の守備位置", positions_list, index=0, label_visibility="collapsed", key=f"pos_{batter.name}")
+
+    # 最終的に反映する際、temp_order順に並び替えておく
+    st.session_state.my_batters = sorted_batters
 
     st.markdown("<h2 style='font-size: 20px; font-weight: bold; margin-top: 32px; margin-bottom: 24px;'>投手の役割</h2>", unsafe_allow_html=True)
     roles_list = ["先発", "僅差", "ビハインド", "セットアッパー", "抑え"]
     
-    # 投手の起用法設定
     for i, pitcher in enumerate(st.session_state.my_pitchers):
         with st.container(border=True):
-            st.markdown(f"<div style='font-weight: bold; font-size: 18px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 8px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-weight: bold; font-size: 16px; margin-bottom: 2px;'>{pitcher.name}</div><div style='font-size: 11px; color: #888; margin-bottom: 4px;'>所属: {pitcher.team}</div>", unsafe_allow_html=True)
             def_index = 0 if i < 6 else (4 if i == 14 else 1)
             pitcher.pitcher_role = st.selectbox(f"{pitcher.name}の起用法", roles_list, index=def_index, label_visibility="collapsed", key=f"role_{i}")
 
