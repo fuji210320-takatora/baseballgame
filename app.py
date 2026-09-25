@@ -1271,7 +1271,8 @@ def pitching_page(pitchers):
     if cl_count != 1:
         st.markdown(f'<div style="background-color: #FBE9E7; padding: 15px; border-radius: 8px; color: #D32F2F; font-weight: bold; margin-bottom: 20px;">抑えは1人ちょうどにしてください（いま{cl_count}人）</div>', unsafe_allow_html=True)
 
-    role_options = ["先発", "中継エース", "僅差", "ビハインド", "抑え"]
+    # 【修正】ここを「中継ぎエース」に直しました
+    role_options = ["先発", "中継ぎエース", "僅差", "ビハインド", "抑え"]
 
     for p in pitchers:
         with st.container():
