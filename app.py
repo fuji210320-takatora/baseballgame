@@ -343,7 +343,6 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     control_diff = pitcher.control - 50.0
 
     # 能力値59〜40までのデバフ（さらに緩やかな二次曲線）
-    # 係数をさらに下げてマイルドに調整
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
@@ -613,7 +612,8 @@ class PitchingState:
         # 中継ぎの登板数を均等にするため、試合数が少ない順に並び替え
         available.sort(key=lambda x: x.pitching.G)
 
-        if inning >= 8 and score_diff > 0 and self.closer is not None and self.closer not in self.used_bullpen:
+        # 【修正】抑えの登板条件を「9回以降」に変更
+        if inning >= 9 and score_diff > 0 and self.closer is not None and self.closer not in self.used_bullpen:
             return self.closer
             
         if score_diff <= -2:
@@ -656,7 +656,8 @@ class PitchingState:
                 old.pitching.HLD += 1
                 self.game_holds.append(old)
 
-        if new not in self.used_bullpen and new in self.bullpen:
+        # 【修正】「抑え」もちゃんと使用済みリストに入れるように変更
+        if new not in self.used_bullpen and (new in self.bullpen or new is self.closer):
             self.used_bullpen.append(new)
 
         new.game_pitches = 0 
@@ -1221,7 +1222,6 @@ def order_page(fielders, league):
     names = [p.name for p, _ in lineup_default]
     ordered = []
 
-    # セ・リーグ打線のエラー回避用
     for i in range(len(lineup_default)):
         remaining_names = [n for n in names if n not in [p.name for p, _ in ordered]]
         selected_name = st.selectbox(f"{i + 1}番", remaining_names, key=f"batting_order_{i}")
@@ -1271,7 +1271,7 @@ def pitching_page(pitchers):
     if cl_count != 1:
         st.markdown(f'<div style="background-color: #FBE9E7; padding: 15px; border-radius: 8px; color: #D32F2F; font-weight: bold; margin-bottom: 20px;">抑えは1人ちょうどにしてください（いま{cl_count}人）</div>', unsafe_allow_html=True)
 
-    role_options = ["先発", "中継ぎエース", "僅差", "ビハインド", "抑え"]
+    role_options = ["先発", "中継エース", "僅差", "ビハインド", "抑え"]
 
     for p in pitchers:
         with st.container():
