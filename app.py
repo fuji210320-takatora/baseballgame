@@ -414,9 +414,13 @@ def resolve_outcome(result, defense):
 
     if random.random() >= error_prob:
         defender.fielding.PO += 1
-        defender.fielding.UZR += (ability - 50.0) / 100.0
+        defender.fielding.UZR += (ability - 50.0) / 1200.0  # 【変更】100.0 を 1200.0 にする
         return "field_out", pos, defender
 
+    defender.fielding.E += 1
+    defender.fielding.UZR -= 0.5 + max(0.0, (50.0 - ability) / 100.0)  # 【変更】0.8 を 0.5 にする
+    return "error", pos, defender
+    
     defender.fielding.E += 1
     defender.fielding.UZR -= 0.8 + max(0.0, (50.0 - ability) / 100.0)
     return "error", pos, defender
