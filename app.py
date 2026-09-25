@@ -342,7 +342,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 【修正】能力値59〜40までのデバフ（緩やかな二次曲線）
+    # 能力値59〜40までのデバフ（緩やかな二次曲線）
     # 40でペナルティを打ち止めにし、係数も下げてマイルドに
     contact_penalty = 0.0
     if batter.contact < 60.0:
@@ -965,17 +965,18 @@ def fmt_pct(val):
     return s
 
 def pos_icon(pos):
+    # 【色変更】ポジションごとのカラーアイコン
     mapping = {
-        "C": ("捕", "#C68A12", "捕手"),
-        "1B": ("一", "#B22222", "一塁手"),
-        "2B": ("二", "#008080", "二塁手"),
-        "3B": ("三", "#006400", "三塁手"),
-        "SS": ("遊", "#7E57C2", "遊撃手"),
-        "LF": ("左", "#D81B60", "左翼手"),
-        "CF": ("中", "#E65100", "中堅手"),
-        "RF": ("右", "#2E8B57", "右翼手"),
-        "DH": ("D", "#424242", "指名打者"),
-        "P": ("投", "#1E88E5", "投手"),
+        "C": ("捕", "#03A9F4", "捕手"),     # 水色
+        "1B": ("一", "#F9A825", "一塁手"),   # 黄色
+        "2B": ("二", "#F9A825", "二塁手"),   # 黄色
+        "3B": ("三", "#F9A825", "三塁手"),   # 黄色
+        "SS": ("遊", "#F9A825", "遊撃手"),   # 黄色
+        "LF": ("左", "#388E3C", "左翼手"),   # 緑色
+        "CF": ("中", "#388E3C", "中堅手"),   # 緑色
+        "RF": ("右", "#388E3C", "右翼手"),   # 緑色
+        "DH": ("D", "#757575", "指名打者"),  # グレー
+        "P": ("投", "#E53935", "投手"),      # 投手（デフォルト）
     }
     return mapping.get(pos, ("?", "#999", "不明"))
 
@@ -1220,7 +1221,7 @@ def order_page(fielders, league):
     names = [p.name for p, _ in lineup_default]
     ordered = []
 
-    # セ・リーグ打線のエラー回避用
+    # 【修正】セ・リーグの8人打線に対応
     for i in range(len(lineup_default)):
         remaining_names = [n for n in names if n not in [p.name for p, _ in ordered]]
         selected_name = st.selectbox(f"{i + 1}番", remaining_names, key=f"batting_order_{i}")
@@ -1246,7 +1247,7 @@ def pitching_page(pitchers):
     names = [p.name for p in pitchers]
 
     if len(names) < 15:
-        st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1ర్ణ人が必要です。")
+        st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1人が必要です。")
         return None
 
     if "pitcher_roles" not in st.session_state:
@@ -1683,19 +1684,23 @@ elif st.session_state.step == "result":
 
     html_bat += '</div>'
 
-    # 投球成績 HTML生成
+    # 【修正】投球成績 HTML生成（役割別のカラー反映）
     html_pitch = '<div class="stats-container">'
     staff = st.session_state.my_staff
     pitchers_list = staff["starters"] + staff["bullpen"] + ([staff["closer"]] if staff["closer"] else [])
     
     for i, p in enumerate(pitchers_list, start=1):
-        icon_char, color, jp_pos = pos_icon("P")
+        icon_char = "投"
+        
         if p in staff["starters"]:
             role_str = "先発"
+            color = "#E53935"  # 赤色
         elif p == staff["closer"]:
             role_str = "抑え"
+            color = "#EC407A"  # ピンク色
         else:
             role_str = staff["bullpen_roles"].get(id(p), "中継ぎ")
+            color = "#EC407A"  # ピンク色
             
         era_str = f"{era(p):.2f}"
         
