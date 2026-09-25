@@ -58,7 +58,7 @@ BASE_PA = {
     "triple": 0.008,
     "hr": 0.026,
     "walk": 0.085,
-    "so": 0.185,
+    "so": 0.205,
 }
 
 SCHEDULE_SAME = 25
