@@ -598,6 +598,10 @@ class PitchingState:
         available = self._available_bullpen()
         if not available:
             return None
+            
+        # ★ここを追加：常に「シーズンの登板数（G）」が少ない順に並び替える
+        available.sort(key=lambda x: x.pitching.G)
+
         if inning >= 8 and score_diff > 0 and self.closer is not None and self.closer not in self.used_bullpen:
             return self.closer
         if score_diff > 0:
@@ -610,8 +614,9 @@ class PitchingState:
             if preferred: return preferred[0]
         preferred = [p for p in available if self.bullpen_roles.get(id(p)) == "僅差"]
         if preferred: return preferred[0]
+        
         return available[0]
-
+        
     def replace(self, inning, score_diff):
         old = self.current
         if old is None: return None
