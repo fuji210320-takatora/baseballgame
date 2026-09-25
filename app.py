@@ -52,13 +52,14 @@ RANK_WEIGHT = {
     "E": 0.55,
 }
 
+# 【投高打低調整】基準となるヒット確率を下げ、三振率を上げる
 BASE_PA = {
-    "single": 0.165,
-    "double": 0.049,
-    "triple": 0.008,
-    "hr": 0.026,
-    "walk": 0.085,
-    "so": 0.205,
+    "single": 0.155,  # 0.170からダウン
+    "double": 0.045,  # 0.055からダウン
+    "triple": 0.004,  # 0.006からダウン
+    "hr": 0.024,      # 0.032からダウン
+    "walk": 0.075,    # 0.085からダウン
+    "so": 0.230,      # 0.205からアップ
 }
 
 SCHEDULE_SAME = 25
@@ -341,18 +342,20 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    single = BASE_PA["single"] + contact_diff * 0.0012
-    double = BASE_PA["double"] + contact_diff * 0.00025 + power_diff * 0.00035
-    triple = BASE_PA["triple"] + batter.speed * 0.00002
-    hr = BASE_PA["hr"] + power_diff * 0.0009
-    walk = BASE_PA["walk"] - control_diff * 0.0010
-    so = BASE_PA["so"] - contact_diff * 0.0010
+    # 【投高打低調整】打者の能力による恩恵を減らす
+    single = BASE_PA["single"] + contact_diff * 0.0008
+    double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025
+    triple = BASE_PA["triple"] + batter.speed * 0.000015
+    hr = BASE_PA["hr"] + power_diff * 0.0007
+    walk = BASE_PA["walk"] - control_diff * 0.0012
+    so = BASE_PA["so"] - contact_diff * 0.0008
 
+    # 【投高打低調整】投手の能力（球質）による制圧力を上げる
     quality_delta = quality - 55.0
-    single -= quality_delta * 0.00035
-    double -= quality_delta * 0.00018
-    hr -= quality_delta * 0.00020
-    so += quality_delta * 0.0010
+    single -= quality_delta * 0.00045
+    double -= quality_delta * 0.00025
+    hr -= quality_delta * 0.00030
+    so += quality_delta * 0.0015
 
     if fatigue < 1.0:
         single += (1.0 - fatigue) * 0.03
@@ -360,12 +363,13 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         walk += (1.0 - fatigue) * 0.02
         so -= (1.0 - fatigue) * 0.03
 
-    single = clamp(single, 0.02, 0.35)
-    double = clamp(double, 0.005, 0.15)
+    # 【投高打低調整】打撃成績の天井を下げる
+    single = clamp(single, 0.01, 0.30)
+    double = clamp(double, 0.002, 0.12)
     triple = clamp(triple, 0.001, 0.03)
-    hr = clamp(hr, 0.003, 0.12)
-    walk = clamp(walk, 0.015, 0.18)
-    so = clamp(so, 0.05, 0.40)
+    hr = clamp(hr, 0.001, 0.08)
+    walk = clamp(walk, 0.015, 0.15)
+    so = clamp(so, 0.05, 0.45)
 
     used = single + double + triple + hr + walk + so
     out = max(0.02, 1.0 - used)
@@ -412,17 +416,14 @@ def resolve_outcome(result, defense):
     error_prob = base_error_prob * (1.0 + ability_factor)
     error_prob = clamp(error_prob, 0.0009, 0.0050)
 
+    # 【修正】UZRのスケール適正化
     if random.random() >= error_prob:
         defender.fielding.PO += 1
-        defender.fielding.UZR += (ability - 50.0) / 1200.0  # 【変更】100.0 を 1200.0 にする
+        defender.fielding.UZR += (ability - 50.0) / 1200.0
         return "field_out", pos, defender
 
     defender.fielding.E += 1
-    defender.fielding.UZR -= 0.5 + max(0.0, (50.0 - ability) / 100.0)  # 【変更】0.8 を 0.5 にする
-    return "error", pos, defender
-    
-    defender.fielding.E += 1
-    defender.fielding.UZR -= 0.8 + max(0.0, (50.0 - ability) / 100.0)
+    defender.fielding.UZR -= 0.5 + max(0.0, (50.0 - ability) / 100.0)
     return "error", pos, defender
 
 # ============================================================
@@ -501,7 +502,7 @@ def advance_on_walk(bases, batter):
     return new_bases, runs, scoring
 
 # ============================================================
-# 試合用投手交代 (リニューアル版)
+# 試合用投手交代 (リニューアル版 + 球数スタミナ制)
 # ============================================================
 class PitchingState:
     def __init__(self, staff):
@@ -520,14 +521,13 @@ class PitchingState:
         self.pitcher_runs = defaultdict(int)
         self.pitcher_earned = defaultdict(int)
         
-        # 各投手の試合ごとの最大スタミナ（球数）を保持する辞書
         self.max_pitches = {} 
 
     def choose_starter(self, game_number):
         if not self.starters:
             return None
         self.current = self.starters[game_number % len(self.starters)]
-        self.current.game_pitches = 0 # 試合開始時に球数をリセット
+        self.current.game_pitches = 0 
         self.current_start_outs = 0
         self.appearance_start_outs[id(self.current)] = self.current.pitching.outs
         self.current.pitching.G += 1
@@ -548,15 +548,12 @@ class PitchingState:
         current_outs = self.current_start_outs
         pitches = getattr(p, 'game_pitches', 0)
         
-        # スタミナ限界の計算 (能力のスタミナ * 1.1〜1.5 を試合ごとに固定)
         if p_id not in self.max_pitches:
             self.max_pitches[p_id] = p.stamina * random.uniform(1.1, 1.5)
         max_limit = self.max_pitches[p_id]
         
-        # スタミナ切れ判定
         is_stamina_empty = pitches >= max_limit
         
-        # 役割の取得
         if p in self.starters:
             role = "先発"
         elif p is self.closer:
@@ -564,29 +561,23 @@ class PitchingState:
         else:
             role = self.bullpen_roles.get(p_id, "僅差")
 
-        # ① 7失点以上：無条件で即交代
         if runs >= 7:
             return True
 
-        # ② ビハインド起用の特例
-        # スタミナが切れていても、イニングの途中（アウト数が3の倍数でない）なら投げ切る
         if role == "ビハインド" and is_stamina_empty:
             if current_outs % 3 != 0:
                 is_stamina_empty = False 
 
-        # ③ 失点数に応じた強制イニング制限（スタミナに関わらず交代）
-        if runs >= 5 and current_outs >= 15: # 5回(15アウト)まで
+        if runs >= 5 and current_outs >= 15: 
             return True
-        if runs >= 3 and current_outs >= 18: # 6回(18アウト)まで
+        if runs >= 3 and current_outs >= 18: 
             return True
-        if runs >= 2 and current_outs >= 21: # 7回(21アウト)まで
+        if runs >= 2 and current_outs >= 21: 
             return True
 
-        # ④ スタミナ限界での交代（1失点以下の基本ルール）
         if is_stamina_empty:
             return True
 
-        # ⑤ 中継ぎ・抑えのデフォルト制限（ビハインド以外）
         if p not in self.starters and role != "ビハインド":
             max_outs = 6 if (role == "中継ぎエース" and inning <= 7) else 3
             if current_outs >= max_outs:
@@ -599,24 +590,31 @@ class PitchingState:
         if not available:
             return None
             
-        # ★ここを追加：常に「シーズンの登板数（G）」が少ない順に並び替える
+        # 【修正】中継ぎの登板数を均等にするため、試合数が少ない順に並び替え
         available.sort(key=lambda x: x.pitching.G)
 
         if inning >= 8 and score_diff > 0 and self.closer is not None and self.closer not in self.used_bullpen:
             return self.closer
+            
+        if score_diff <= -2:
+            preferred = [p for p in available if self.bullpen_roles.get(id(p)) == "ビハインド"]
+            if preferred: return preferred[0]
+            preferred = [p for p in available if self.bullpen_roles.get(id(p)) == "僅差"]
+            if preferred: return preferred[0]
+            preferred = [p for p in available if self.bullpen_roles.get(id(p)) == "中継ぎエース"]
+            if preferred: return preferred[0]
+
         if score_diff > 0:
             preferred = [p for p in available if self.bullpen_roles.get(id(p)) == "中継ぎエース"]
             if preferred: return preferred[0]
             preferred = [p for p in available if self.bullpen_roles.get(id(p)) == "僅差"]
             if preferred: return preferred[0]
-        if score_diff <= -2:
-            preferred = [p for p in available if self.bullpen_roles.get(id(p)) == "ビハインド"]
-            if preferred: return preferred[0]
+            
         preferred = [p for p in available if self.bullpen_roles.get(id(p)) == "僅差"]
         if preferred: return preferred[0]
         
         return available[0]
-        
+
     def replace(self, inning, score_diff):
         old = self.current
         if old is None: return None
@@ -641,7 +639,7 @@ class PitchingState:
         if new not in self.used_bullpen and new in self.bullpen:
             self.used_bullpen.append(new)
 
-        new.game_pitches = 0 # 登板時に球数をリセット
+        new.game_pitches = 0 
         new.pitching.G += 1
         self.game_pitchers.append(new)
         self.current = new
@@ -713,7 +711,7 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
         probs, pitch_name = at_bat_probabilities(batter, pitcher, pitcher.pitching.outs)
         result = choose_result(probs)
 
-        # 1打席あたりの球数をランダムで計算して投手に加算
+        # 【修正】1打席あたりの球数を加算
         if result in ("so", "walk"):
             pa_pitches = random.randint(4, 8)
         else:
@@ -1202,9 +1200,12 @@ def order_page(fielders, league):
     names = [p.name for p, _ in lineup_default]
     ordered = []
 
-    for i in range(9):
+    # 【修正】セ・リーグの8人打線での StopIteration エラー回避
+    for i in range(len(lineup_default)):
         remaining_names = [n for n in names if n not in [p.name for p, _ in ordered]]
         selected_name = st.selectbox(f"{i + 1}番", remaining_names, key=f"batting_order_{i}")
+        if selected_name is None:
+            continue
         pair = next(x for x in lineup_default if x[0].name == selected_name)
         ordered.append(pair)
 
@@ -1218,7 +1219,7 @@ def order_page(fielders, league):
     return None
 
 # ============================================================
-# 投手起用画面 (リニューアル版 UI)
+# 投手起用画面
 # ============================================================
 def pitching_page(pitchers):
     st.header("⑤ 投手起用設定")
@@ -1315,7 +1316,7 @@ st.session_state.teams = build_teams(
 )
 
 # ============================================================
-# 初期画面（スタート画面）
+# 初期画面
 # ============================================================
 if st.session_state.step == "start":
     st.markdown("""
@@ -1359,7 +1360,7 @@ if st.session_state.step == "start":
         st.rerun()
 
 # ============================================================
-# リーグ設定
+# 以下は状態遷移の制御
 # ============================================================
 elif st.session_state.step == "league_setup":
     st.header("① NPBリーグ設定")
@@ -1391,27 +1392,18 @@ elif st.session_state.step == "league_setup":
         st.session_state.step = "draft_fielders"
         st.rerun()
 
-# ============================================================
-# 野手ドラフト
-# ============================================================
 elif st.session_state.step == "draft_fielders":
     finished = draft_page("野手", fielders_all, 9, skip_limit=5)
     if finished:
         st.session_state.step = "draft_pitchers"
         st.rerun()
 
-# ============================================================
-# 投手ドラフト
-# ============================================================
 elif st.session_state.step == "draft_pitchers":
     finished = draft_page("投手", pitchers_all, 15, skip_limit=5)
     if finished:
         st.session_state.step = "league_select"
         st.rerun()
 
-# ============================================================
-# セ・パ選択
-# ============================================================
 elif st.session_state.step == "league_select":
     st.header("③ セ・パ選択")
     league = st.radio("あなたのチームはどちらのリーグに所属しますか？", ["セ・リーグ", "パ・リーグ"])
@@ -1424,9 +1416,6 @@ elif st.session_state.step == "league_select":
         st.session_state.step = "order"
         st.rerun()
 
-# ============================================================
-# オーダー
-# ============================================================
 elif st.session_state.step == "order":
     result = order_page(st.session_state.draft_fielders, st.session_state.my_league)
     if result is not None:
@@ -1435,9 +1424,6 @@ elif st.session_state.step == "order":
         st.session_state.step = "pitching"
         st.rerun()
 
-# ============================================================
-# 投手起用
-# ============================================================
 elif st.session_state.step == "pitching":
     result = pitching_page(st.session_state.draft_pitchers)
     if result is not None:
@@ -1445,9 +1431,6 @@ elif st.session_state.step == "pitching":
         st.session_state.step = "ready"
         st.rerun()
 
-# ============================================================
-# 開幕前確認
-# ============================================================
 elif st.session_state.step == "ready":
     st.header("⑥ 開幕前確認")
     league = st.session_state.my_league
@@ -1516,9 +1499,6 @@ elif st.session_state.step == "ready":
         st.session_state.step = "season"
         st.rerun()
 
-# ============================================================
-# シーズン
-# ============================================================
 elif st.session_state.step == "season":
     st.header("⑦ 143試合シミュレーション")
     teams = st.session_state.teams
@@ -1581,9 +1561,6 @@ elif st.session_state.step == "season":
     st.session_state.step = "result"
     st.rerun()
 
-# ============================================================
-# 結果 (リニューアル版 UI)
-# ============================================================
 elif st.session_state.step == "result":
     result = st.session_state.season_result
 
