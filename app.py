@@ -342,15 +342,27 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 【投高打低調整】打者の能力による恩恵を減らす
-    single = BASE_PA["single"] + contact_diff * 0.0008
-    double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025
-    triple = BASE_PA["triple"] + batter.speed * 0.000015
-    hr = BASE_PA["hr"] + power_diff * 0.0007
-    walk = BASE_PA["walk"] - control_diff * 0.0012
-    so = BASE_PA["so"] - contact_diff * 0.0008
+    # 【修正】能力値60未満（Dランク以下）へのペナルティを二次曲線にする
+    # 60から離れるほど、加速度的にペナルティの重みが増していく
+    contact_penalty = 0.0
+    if batter.contact < 60.0:
+        diff = 60.0 - batter.contact
+        contact_penalty = (diff * 1.5) + ((diff ** 2) * 0.15)
 
-    # 【投高打低調整】投手の能力（球質）による制圧力を上げる
+    power_penalty = 0.0
+    if batter.power < 60.0:
+        diff = 60.0 - batter.power
+        power_penalty = (diff * 1.5) + ((diff ** 2) * 0.15)
+
+    # ペナルティを確率に反映
+    single = BASE_PA["single"] + contact_diff * 0.0008 - (contact_penalty * 0.0010)
+    double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002)
+    triple = BASE_PA["triple"] + batter.speed * 0.000015
+    hr = BASE_PA["hr"] + power_diff * 0.0007 - (power_penalty * 0.0012)
+    walk = BASE_PA["walk"] - control_diff * 0.0012
+    so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008)
+
+    # 投手の能力（球質）による制圧力
     quality_delta = quality - 55.0
     single -= quality_delta * 0.00045
     double -= quality_delta * 0.00025
@@ -363,7 +375,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         walk += (1.0 - fatigue) * 0.02
         so -= (1.0 - fatigue) * 0.03
 
-    # 【投高打低調整】打撃成績の天井を下げる
+    # 打撃成績の天井と底
     single = clamp(single, 0.01, 0.30)
     double = clamp(double, 0.002, 0.12)
     triple = clamp(triple, 0.001, 0.03)
