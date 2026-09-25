@@ -58,7 +58,7 @@ BASE_PA = {
     "triple": 0.008,
     "hr": 0.036,
     "walk": 0.085,
-    "so": 0.205,
+    "so": 0.185,
 }
 
 SCHEDULE_SAME = 25
@@ -344,7 +344,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     single = BASE_PA["single"] + contact_diff * 0.0012
     double = BASE_PA["double"] + contact_diff * 0.00025 + power_diff * 0.00035
     triple = BASE_PA["triple"] + batter.speed * 0.00002
-    hr = BASE_PA["hr"] + power_diff * 0.0010
+    hr = BASE_PA["hr"] + power_diff * 0.0015
     walk = BASE_PA["walk"] - control_diff * 0.0010
     so = BASE_PA["so"] - contact_diff * 0.0010
 
