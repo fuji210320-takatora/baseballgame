@@ -52,14 +52,14 @@ RANK_WEIGHT = {
     "E": 0.55,
 }
 
-# 【投高打低調整】基準となるヒット確率を下げ、三振率を上げる
+# 【投高打低調整】基準となる確率
 BASE_PA = {
-    "single": 0.155,  # 0.170からダウン
-    "double": 0.045,  # 0.055からダウン
-    "triple": 0.004,  # 0.006からダウン
-    "hr": 0.024,      # 0.032からダウン
-    "walk": 0.075,    # 0.085からダウン
-    "so": 0.230,      # 0.205からアップ
+    "single": 0.155,
+    "double": 0.045,
+    "triple": 0.004,
+    "hr": 0.018,
+    "walk": 0.075,
+    "so": 0.230,
 }
 
 SCHEDULE_SAME = 25
@@ -342,8 +342,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 【修正】能力値60未満（Dランク以下）へのペナルティを二次曲線にする
-    # 60から離れるほど、加速度的にペナルティの重みが増していく
+    # 能力値60未満（Dランク以下）へのデバフ（二次曲線）
     contact_penalty = 0.0
     if batter.contact < 60.0:
         diff = 60.0 - batter.contact
@@ -354,11 +353,17 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         diff = 60.0 - batter.power
         power_penalty = (diff * 1.5) + ((diff ** 2) * 0.15)
 
-    # ペナルティを確率に反映
+    # パワー60以上の打者へのアーチストボーナス（二次曲線）
+    power_bonus = 0.0
+    if batter.power > 60.0:
+        diff = batter.power - 60.0
+        power_bonus = (diff ** 2) * 0.000075
+
+    # ペナルティとボーナスを確率に反映
     single = BASE_PA["single"] + contact_diff * 0.0008 - (contact_penalty * 0.0010)
     double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002)
     triple = BASE_PA["triple"] + batter.speed * 0.000015
-    hr = BASE_PA["hr"] + power_diff * 0.0007 - (power_penalty * 0.0012)
+    hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + power_bonus
     walk = BASE_PA["walk"] - control_diff * 0.0012
     so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008)
 
@@ -379,7 +384,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     single = clamp(single, 0.01, 0.30)
     double = clamp(double, 0.002, 0.12)
     triple = clamp(triple, 0.001, 0.03)
-    hr = clamp(hr, 0.001, 0.08)
+    hr = clamp(hr, 0.001, 0.12)
     walk = clamp(walk, 0.015, 0.15)
     so = clamp(so, 0.05, 0.45)
 
@@ -428,7 +433,7 @@ def resolve_outcome(result, defense):
     error_prob = base_error_prob * (1.0 + ability_factor)
     error_prob = clamp(error_prob, 0.0009, 0.0050)
 
-    # 【修正】UZRのスケール適正化
+    # UZRのスケール適正化
     if random.random() >= error_prob:
         defender.fielding.PO += 1
         defender.fielding.UZR += (ability - 50.0) / 1200.0
@@ -514,7 +519,7 @@ def advance_on_walk(bases, batter):
     return new_bases, runs, scoring
 
 # ============================================================
-# 試合用投手交代 (リニューアル版 + 球数スタミナ制)
+# 試合用投手交代 (球数スタミナ制)
 # ============================================================
 class PitchingState:
     def __init__(self, staff):
@@ -602,7 +607,7 @@ class PitchingState:
         if not available:
             return None
             
-        # 【修正】中継ぎの登板数を均等にするため、試合数が少ない順に並び替え
+        # 中継ぎの登板数を均等にするため、試合数が少ない順に並び替え
         available.sort(key=lambda x: x.pitching.G)
 
         if inning >= 8 and score_diff > 0 and self.closer is not None and self.closer not in self.used_bullpen:
@@ -723,7 +728,7 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
         probs, pitch_name = at_bat_probabilities(batter, pitcher, pitcher.pitching.outs)
         result = choose_result(probs)
 
-        # 【修正】1打席あたりの球数を加算
+        # 1打席あたりの球数を加算
         if result in ("so", "walk"):
             pa_pitches = random.randint(4, 8)
         else:
@@ -1212,7 +1217,7 @@ def order_page(fielders, league):
     names = [p.name for p, _ in lineup_default]
     ordered = []
 
-    # 【修正】セ・リーグの8人打線での StopIteration エラー回避
+    # セ・リーグ打線のエラー回避用
     for i in range(len(lineup_default)):
         remaining_names = [n for n in names if n not in [p.name for p, _ in ordered]]
         selected_name = st.selectbox(f"{i + 1}番", remaining_names, key=f"batting_order_{i}")
@@ -1372,7 +1377,7 @@ if st.session_state.step == "start":
         st.rerun()
 
 # ============================================================
-# 以下は状態遷移の制御
+# 状態遷移の制御
 # ============================================================
 elif st.session_state.step == "league_setup":
     st.header("① NPBリーグ設定")
