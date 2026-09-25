@@ -342,19 +342,19 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 能力値59〜40までのデバフ（緩やかな二次曲線）
-    # 40でペナルティを打ち止めにし、係数も下げてマイルドに
+    # 能力値59〜40までのデバフ（さらに緩やかな二次曲線）
+    # 係数をさらに下げてマイルドに調整
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
         diff = 60.0 - effective_contact
-        contact_penalty = (diff * 0.8) + ((diff ** 2) * 0.05)
+        contact_penalty = (diff * 0.5) + ((diff ** 2) * 0.02)
 
     power_penalty = 0.0
     if batter.power < 60.0:
         effective_power = max(40.0, batter.power)
         diff = 60.0 - effective_power
-        power_penalty = (diff * 0.8) + ((diff ** 2) * 0.05)
+        power_penalty = (diff * 0.5) + ((diff ** 2) * 0.02)
 
     # パワー60以上の打者へのアーチストボーナス
     power_bonus = 0.0
@@ -1221,7 +1221,7 @@ def order_page(fielders, league):
     names = [p.name for p, _ in lineup_default]
     ordered = []
 
-    # 【修正】セ・リーグの8人打線に対応
+    # セ・リーグ打線のエラー回避用
     for i in range(len(lineup_default)):
         remaining_names = [n for n in names if n not in [p.name for p, _ in ordered]]
         selected_name = st.selectbox(f"{i + 1}番", remaining_names, key=f"batting_order_{i}")
@@ -1684,7 +1684,7 @@ elif st.session_state.step == "result":
 
     html_bat += '</div>'
 
-    # 【修正】投球成績 HTML生成（役割別のカラー反映）
+    # 投球成績 HTML生成（役割別のカラー反映）
     html_pitch = '<div class="stats-container">'
     staff = st.session_state.my_staff
     pitchers_list = staff["starters"] + staff["bullpen"] + ([staff["closer"]] if staff["closer"] else [])
