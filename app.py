@@ -342,18 +342,21 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 能力値60未満（Dランク以下）へのデバフ（二次曲線）
+    # 【修正】能力値59〜40までのデバフ（緩やかな二次曲線）
+    # 40でペナルティを打ち止めにし、係数も下げてマイルドに
     contact_penalty = 0.0
     if batter.contact < 60.0:
-        diff = 60.0 - batter.contact
-        contact_penalty = (diff * 1.5) + ((diff ** 2) * 0.15)
+        effective_contact = max(40.0, batter.contact)
+        diff = 60.0 - effective_contact
+        contact_penalty = (diff * 0.8) + ((diff ** 2) * 0.05)
 
     power_penalty = 0.0
     if batter.power < 60.0:
-        diff = 60.0 - batter.power
-        power_penalty = (diff * 1.5) + ((diff ** 2) * 0.15)
+        effective_power = max(40.0, batter.power)
+        diff = 60.0 - effective_power
+        power_penalty = (diff * 0.8) + ((diff ** 2) * 0.05)
 
-    # パワー60以上の打者へのアーチストボーナス（二次曲線）
+    # パワー60以上の打者へのアーチストボーナス
     power_bonus = 0.0
     if batter.power > 60.0:
         diff = batter.power - 60.0
@@ -1243,7 +1246,7 @@ def pitching_page(pitchers):
     names = [p.name for p in pitchers]
 
     if len(names) < 15:
-        st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1人が必要です。")
+        st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1ర్ణ人が必要です。")
         return None
 
     if "pitcher_roles" not in st.session_state:
