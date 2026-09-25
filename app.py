@@ -53,10 +53,10 @@ RANK_WEIGHT = {
 }
 
 BASE_PA = {
-    "single": 0.185,
-    "double": 0.059,
+    "single": 0.165,
+    "double": 0.049,
     "triple": 0.008,
-    "hr": 0.036,
+    "hr": 0.026,
     "walk": 0.085,
     "so": 0.185,
 }
