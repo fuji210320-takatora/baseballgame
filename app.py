@@ -1402,6 +1402,11 @@ def pitching_page(pitchers):
 
     return None
 
+def build_opponent_team(team, dh):
+    lineup = best_lineup_for_team(team, dh=dh)
+    staff = best_pitching_staff(team)
+    return {"team": team, "lineup": lineup, "staff": staff}
+
 # ============================================================
 # アプリケーション実行
 # ============================================================
