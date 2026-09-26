@@ -58,12 +58,12 @@ RANK_WEIGHT = {
 }
 
 BASE_PA = {
-    "single": 0.155,
-    "double": 0.045,
+    "single": 0.170,
+    "double": 0.055,
     "triple": 0.004,
-    "hr": 0.018,
+    "hr": 0.017,
     "walk": 0.075,
-    "so": 0.230,
+    "so": 0.205,
 }
 
 SCHEDULE_SAME = 25
