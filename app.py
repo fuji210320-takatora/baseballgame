@@ -34,7 +34,6 @@ POSITION_JP = {
     "P": "投手",
 }
 
-# 【修正】ユーザーの感覚（S=90〜, A=80〜...）に合わせて、各ランクの中央値に設定
 RANK_VALUE = {
     "S": 95.0,
     "A": 85.0,
@@ -46,7 +45,6 @@ RANK_VALUE = {
     "G": 10.0,
 }
 
-# 試合中、その球種が選ばれる確率の重み付け（強い球ほど投げやすい）
 RANK_WEIGHT = {
     "S": 1.40,
     "A": 1.25,
@@ -236,7 +234,6 @@ def assign_initial_positions(fielders, dh=True):
     assigned_positions = set()
     assigned_players = set()
     
-    # 1. 一人しか守れる選手がいないポジションを優先して埋める
     for pos in POSITIONS:
         capable = [p for p in remaining if p.defense_at(pos) > 0]
         if len(capable) == 1:
@@ -247,7 +244,6 @@ def assign_initial_positions(fielders, dh=True):
                 assigned_players.add(p.name)
                 remaining.remove(p)
                 
-    # 2. 残りは「ミパ走」の合計値順に埋める
     def total_score(p):
         return p.contact + p.power + p.speed
 
@@ -264,7 +260,6 @@ def assign_initial_positions(fielders, dh=True):
             unassigned_pos.remove(best_pos)
             remaining.remove(p)
             
-    # それでも空いているポジションがあれば、適当に上から埋める
     for pos in list(unassigned_pos):
         if remaining:
             p = remaining.pop(0)
@@ -288,14 +283,12 @@ def decide_batting_order(lineup_pairs):
             order[idx] = p
             pool.remove(p)
 
-    # 理想の打順ロジックによる割り当て
-    assign_to_order(3, lambda p: p.power * 2 + p.contact * 1.2) # 4番
-    assign_to_order(0, lambda p: p.contact * 1.7 + p.power * 0.4 + p.speed * 2) # 1番
-    assign_to_order(1, lambda p: p.contact * 1.3 + p.power * 1.1 + p.speed) # 2番
-    assign_to_order(4, lambda p: p.power * 2 + p.contact) # 5番
-    assign_to_order(2, lambda p: p.contact + p.power * 2) # 3番
+    assign_to_order(3, lambda p: p.power * 2 + p.contact * 1.2)
+    assign_to_order(0, lambda p: p.contact * 1.7 + p.power * 0.4 + p.speed * 2)
+    assign_to_order(1, lambda p: p.contact * 1.3 + p.power * 1.1 + p.speed)
+    assign_to_order(4, lambda p: p.power * 2 + p.contact)
+    assign_to_order(2, lambda p: p.contact + p.power * 2)
 
-    # 残り（6, 7, 8, 9番）はミート+パワー順で配置
     pool.sort(key=lambda x: x[0].contact + x[0].power, reverse=True)
     
     empty_indices = [i for i, v in enumerate(order) if v is None]
@@ -310,7 +303,6 @@ def count_pitches_of_rank(pitcher, ranks):
     return sum(1 for r in pitcher.pitches.values() if r in ranks)
 
 def relief_sort_key(pitcher):
-    # 抑え・中継ぎエースの決定ロジック
     a_count = count_pitches_of_rank(pitcher, ["S", "A"])
     b_count = count_pitches_of_rank(pitcher, ["B"])
     return (a_count, b_count, pitcher.control, random.random())
@@ -454,7 +446,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     walk = BASE_PA["walk"] - control_diff * 0.0012
     so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
 
-    quality_delta = quality - 55.0
+    quality_delta = quality - 60.0  # RANK_VALUEのインフレ対応
     single -= quality_delta * 0.00045
     double -= quality_delta * 0.00025
     hr -= quality_delta * 0.00030
@@ -789,10 +781,11 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
             game_state["outs"] += 1
     return bases
 
-def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league, home_team=False, inning=1, game_state=None):
+def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league, home_team=False, inning=1, top_bottom="表", game_state=None):
     outs = 0
     bases = [None, None, None]
     runs = 0
+    hr_log = []
 
     while outs < 3:
         steal_state = {"outs": outs}
@@ -820,7 +813,14 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
         if result in ("single", "double", "triple", "hr"):
             batter.batting.AB += 1
             batter.batting.H += 1
-            if result == "single":
+            if result == "hr":
+                runners_on = sum(1 for runner in bases if runner is not None)
+                run_type_char = {0: "①", 1: "②", 2: "③", 3: "④"}[runners_on]
+                batter.batting.HR += 1
+                hr_log.append(f"{inning}回{top_bottom} {batter.name} {batter.batting.HR}号{run_type_char}")
+                batter.batting.TB += 4
+                pitcher.pitching.HR += 1
+            elif result == "single":
                 batter.batting.TB += 1
             elif result == "double":
                 batter.batting.double += 1
@@ -828,10 +828,7 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
             elif result == "triple":
                 batter.batting.triple += 1
                 batter.batting.TB += 3
-            elif result == "hr":
-                batter.batting.HR += 1
-                batter.batting.TB += 4
-                pitcher.pitching.HR += 1
+            
             pitcher.pitching.H += 1
 
             old_bases = list(bases)
@@ -861,14 +858,12 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                 if defender is not None: defender.fielding.A += 1
                 
                 is_sf = False
-                
                 if outs <= 2 and bases[2] is not None:
                     runner = bases[2]
                     if pos in ["LF", "CF", "RF"]:
                         arm = defender.defense_at(pos) if defender else 30.0
                         sf_prob = 0.50 + (runner.speed - arm) * 0.005
                         sf_prob = clamp(sf_prob, 0.10, 0.95)
-                        
                         if random.random() < sf_prob:
                             runs += 1
                             batter.batting.RBI += 1
@@ -880,7 +875,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                         base_prob = 0.45 if pos in ["2B", "SS"] else 0.25
                         run_prob = base_prob + (runner.speed - 40.0) * 0.004
                         run_prob = clamp(run_prob, 0.05, 0.85)
-                        
                         if random.random() < run_prob:
                             runs += 1
                             batter.batting.RBI += 1
@@ -903,7 +897,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                         adv_prob = 0.50 + runner2.speed * 0.004
                     elif pos in ["3B", "SS"]:
                         adv_prob = 0.10 + runner2.speed * 0.002
-                    
                     if random.random() < clamp(adv_prob, 0.05, 0.90):
                         bases[2] = runner2
                         bases[1] = None
@@ -913,11 +906,9 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                     adv_prob = 0.0
                     if pos in ["1B", "2B", "3B", "SS"]:
                         adv_prob = 0.15 + runner1.speed * 0.002
-                    
                     if random.random() < clamp(adv_prob, 0.01, 0.40):
                         bases[1] = runner1
                         bases[0] = None
-
             else:
                 batter.batting.AB += 1
                 if defender is not None: pass
@@ -938,7 +929,7 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                     bases[1] = bases[0]
                     bases[0] = batter
 
-    return runs, batting_index[0]
+    return runs, hr_log
 
 def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number):
     my_pitching = PitchingState(my_staff)
@@ -947,15 +938,18 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
     my_pitcher = my_pitching.choose_starter(game_number)
     op_pitcher = op_pitching.choose_starter(game_number)
 
-    # 勝利投手判定用のトラッキング変数
-    lead_state = 0 # 0: 同点, 1: 自チームリード, -1: 相手チームリード
-    my_por = my_pitcher  # ピッチャー・オブ・レコード（自）
-    op_por = op_pitcher  # ピッチャー・オブ・レコード（相）
+    lead_state = 0
+    my_por = my_pitcher
+    op_por = op_pitcher
 
     my_score = 0
     op_score = 0
     my_batting_index = [0]
     op_batting_index = [0]
+    
+    op_linescore = []
+    my_linescore = []
+    hr_events = []
 
     for p, _ in my_lineup: p.batting.G += 1
     for p, _ in op_lineup: p.batting.G += 1
@@ -974,17 +968,19 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
         if league == "セ・リーグ":
             if len(offense_op) == 8: offense_op.append((op_pitcher, "P"))
 
-        r, _ = simulate_half_inning(
-            [p for p, _ in offense_op], op_batting_index, my_pitcher, defense_my, league, inning=inning
+        r_op, hrs_op = simulate_half_inning(
+            [p for p, _ in offense_op], op_batting_index, my_pitcher, defense_my, league, inning=inning, top_bottom="表"
         )
-        op_score += r
+        op_score += r_op
+        op_linescore.append(str(r_op))
+        hr_events.extend(hrs_op)
+        
         my_pitching.current_start_outs = (my_pitcher.pitching.outs - my_pitching.appearance_start_outs.get(id(my_pitcher), my_pitcher.pitching.outs))
-        my_pitching.pitcher_runs[id(my_pitcher)] += r
-        my_pitching.pitcher_earned[id(my_pitcher)] += r
-        my_pitcher.pitching.R += r
-        my_pitcher.pitching.ER += r
+        my_pitching.pitcher_runs[id(my_pitcher)] += r_op
+        my_pitching.pitcher_earned[id(my_pitcher)] += r_op
+        my_pitcher.pitching.R += r_op
+        my_pitcher.pitching.ER += r_op
 
-        # リード状態の更新（勝ち越された瞬間、その時の投手に勝敗の権利が移る）
         if op_score > my_score and lead_state != -1:
             lead_state = -1
             my_por = my_pitcher
@@ -992,8 +988,8 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
         elif op_score == my_score:
             lead_state = 0
 
-        # 9回以降、表の攻撃終了時点で自チームがリードしていれば裏の攻撃は行わずに終了
         if inning >= 9 and my_score > op_score:
+            my_linescore.append("X")
             break
 
         # 裏（自チームの攻撃）
@@ -1005,15 +1001,18 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
         if league == "セ・リーグ":
             if len(offense_my) == 8: offense_my.append((my_pitcher, "P"))
 
-        r, _ = simulate_half_inning(
-            [p for p, _ in offense_my], my_batting_index, op_pitcher, defense_op, league, inning=inning
+        r_my, hrs_my = simulate_half_inning(
+            [p for p, _ in offense_my], my_batting_index, op_pitcher, defense_op, league, inning=inning, top_bottom="裏"
         )
-        my_score += r
+        my_score += r_my
+        my_linescore.append(str(r_my))
+        hr_events.extend(hrs_my)
+        
         op_pitching.current_start_outs = (op_pitcher.pitching.outs - op_pitching.appearance_start_outs.get(id(op_pitcher), op_pitcher.pitching.outs))
-        op_pitching.pitcher_runs[id(op_pitcher)] += r
-        op_pitching.pitcher_earned[id(op_pitcher)] += r
-        op_pitcher.pitching.R += r
-        op_pitcher.pitching.ER += r
+        op_pitching.pitcher_runs[id(op_pitcher)] += r_my
+        op_pitching.pitcher_earned[id(op_pitcher)] += r_my
+        op_pitcher.pitching.R += r_my
+        op_pitcher.pitching.ER += r_my
 
         if my_score > op_score and lead_state != 1:
             lead_state = 1
@@ -1022,17 +1021,14 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
         elif my_score == op_score:
             lead_state = 0
 
-        # 9回以降、裏の攻撃終了時点で同点でなければ終了（サヨナラ勝ちなど）
         if inning >= 9 and my_score != op_score:
             break
 
-    # ====== 勝利投手の決定ロジック（公式ルール準拠） ======
     def resolve_win(win_pitching_state, win_por):
         win_p = win_por
         if win_p in win_pitching_state.starters:
             outs = win_p.pitching.outs - win_pitching_state.appearance_start_outs.get(id(win_p), win_p.pitching.outs)
-            if outs < 15: # 先発投手が5回（15アウト）未満で降板した場合は勝利投手の権利なし
-                # その後の救援陣の中で、最も投球回が多かった投手に勝利を与える
+            if outs < 15:
                 relievers = [p for p in win_pitching_state.game_pitchers if p not in win_pitching_state.starters]
                 if relievers:
                     pitcher_outs = [(p, p.pitching.outs - win_pitching_state.appearance_start_outs.get(id(p), p.pitching.outs)) for p in relievers]
@@ -1042,6 +1038,7 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
                         win_p = random.choice(candidates)
         return win_p
 
+    save_pitcher = None
     if my_score > op_score:
         winning_pitcher = resolve_win(my_pitching, my_por)
         losing_pitcher = op_por
@@ -1049,15 +1046,16 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
         if winning_pitcher is not None:
             winning_pitcher.pitching.W += 1
             if winning_pitcher in my_pitching.game_holds:
-                my_pitching.game_holds.remove(winning_pitcher) # 勝利投手にはホールドがつかない
+                my_pitching.game_holds.remove(winning_pitcher)
 
         if losing_pitcher is not None:
             losing_pitcher.pitching.L += 1
 
         if my_pitcher is my_pitching.closer and my_pitching.save_eligible and my_pitcher is not winning_pitcher:
             my_pitcher.pitching.SV += 1
+            save_pitcher = my_pitcher
 
-        return my_score, op_score, {"result": "W", "winning_pitcher": winning_pitcher, "losing_pitcher": losing_pitcher}
+        return my_score, op_score, {"result": "W", "winning_pitcher": winning_pitcher, "losing_pitcher": losing_pitcher, "save_pitcher": save_pitcher, "my_linescore": my_linescore, "op_linescore": op_linescore, "hrs": hr_events}
 
     elif my_score < op_score:
         winning_pitcher = resolve_win(op_pitching, op_por)
@@ -1074,10 +1072,10 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
         if op_pitcher is op_pitching.closer and op_pitching.save_eligible and op_pitcher is not winning_pitcher:
             op_pitcher.pitching.SV += 1
 
-        return my_score, op_score, {"result": "L", "winning_pitcher": winning_pitcher, "losing_pitcher": losing_pitcher}
+        return my_score, op_score, {"result": "L", "winning_pitcher": winning_pitcher, "losing_pitcher": losing_pitcher, "save_pitcher": None, "my_linescore": my_linescore, "op_linescore": op_linescore, "hrs": hr_events}
 
     else:
-        return my_score, op_score, {"result": "D"}
+        return my_score, op_score, {"result": "D", "winning_pitcher": None, "losing_pitcher": None, "save_pitcher": None, "my_linescore": my_linescore, "op_linescore": op_linescore, "hrs": hr_events}
 
 # ============================================================
 # 成績計算
@@ -1102,11 +1100,8 @@ def era(p):
 def innings_str(outs):
     return f"{outs // 3}.{outs % 3}"
 
-def team_runs_for(players):
-    return sum(p.batting.R for p in players)
-
-def team_runs_against(pitchers):
-    return sum(p.pitching.R for p in pitchers)
+def format_linescore(ls):
+    return " ".join("".join(ls[i:i+3]) for i in range(0, len(ls), 3))
 
 def fmt_pct(val):
     s = f"{val:.3f}"
@@ -1710,10 +1705,13 @@ elif st.session_state.step == "season":
         game_log.append({
             "試合": game_no,
             "対戦相手": opponent_name,
-            "区分": "同リーグ" if item["type"] == "league" else "交流戦",
-            "得点": score_my,
-            "失点": score_op,
-            "結果": result["result"],
+            "勝敗": result["result"],
+            "スコア": f"{score_my} - {score_op}",
+            "イニング": f"相: {format_linescore(result['op_linescore'])}\n自: {format_linescore(result['my_linescore'])}",
+            "勝投手": result["winning_pitcher"].name if result.get("winning_pitcher") else "-",
+            "敗投手": result["losing_pitcher"].name if result.get("losing_pitcher") else "-",
+            "S投手": result["save_pitcher"].name if result.get("save_pitcher") else "-",
+            "本塁打": "、".join(result.get("hrs", []))
         })
         progress.progress(game_no / 143)
         status.write(f"{game_no}/143試合 {opponent_name} {score_my}-{score_op}")
@@ -1801,7 +1799,9 @@ elif st.session_state.step == "result":
     </div>
     """, unsafe_allow_html=True)
 
-    tab_bat, tab_pitch, tab_log = st.tabs(["打撃成績", "投球成績", "順位表"])
+    tab_bat, tab_pitch, tab_detail, tab_team, tab_standings, tab_log = st.tabs([
+        "打撃成績", "投球成績", "個人詳細成績", "チーム成績", "順位表", "全試合ログ"
+    ])
 
     # 打撃成績 HTML生成
     html_bat = '<div class="stats-container">'
@@ -1867,7 +1867,66 @@ elif st.session_state.step == "result":
     with tab_pitch:
         st.markdown(html_pitch, unsafe_allow_html=True)
 
-    with tab_log:
+    # 個人詳細成績
+    with tab_detail:
+        st.subheader("打者詳細成績")
+        bat_df_data = []
+        for p, pos in batters_to_show:
+            b = p.batting
+            bat_df_data.append({
+                "選手名": p.name,
+                "打率": fmt_pct(batting_avg(p)),
+                "試合": b.G, "打席": b.PA, "打数": b.AB,
+                "得点": b.R, "安打": b.H, "二塁打": b.double, "三塁打": b.triple, "本塁打": b.HR,
+                "塁打": b.TB, "打点": b.RBI, "盗塁": b.SB, "盗塁死": b.CS,
+                "四球": b.BB, "三振": b.SO, "犠飛": b.SF,
+                "出塁率": fmt_pct(obp(p)), "長打率": fmt_pct(slg(p)), "OPS": fmt_pct(ops(p)),
+                "UZR": round(p.fielding.UZR, 1) if pos not in ["DH", "代打"] else "-"
+            })
+        st.dataframe(pd.DataFrame(bat_df_data), hide_index=True, use_container_width=True)
+
+        st.subheader("投手詳細成績")
+        pit_df_data = []
+        for p in pitchers_list:
+            pt = p.pitching
+            whip = (pt.H + pt.BB) / (pt.outs / 3) if pt.outs > 0 else 0.0
+            pit_df_data.append({
+                "選手名": p.name,
+                "防御率": f"{era(p):.2f}",
+                "登板": pt.G, "先発": pt.GS, "勝": pt.W, "敗": pt.L, "セーブ": pt.SV, "ホールド": pt.HLD,
+                "勝率": fmt_pct(pt.W / (pt.W + pt.L) if (pt.W + pt.L) > 0 else 0),
+                "投球回": innings_str(pt.outs), "打者": pt.BF,
+                "被安打": pt.H, "被本塁打": pt.HR, "与四球": pt.BB, "奪三振": pt.SO,
+                "失点": pt.R, "自責点": pt.ER, "WHIP": f"{whip:.2f}"
+            })
+        st.dataframe(pd.DataFrame(pit_df_data), hide_index=True, use_container_width=True)
+
+    # チーム成績
+    with tab_team:
+        st.subheader("チーム通算成績")
+        my_players = [p for p, _ in st.session_state.my_lineup]
+        if st.session_state.my_bench: my_players.append(st.session_state.my_bench)
+        
+        t_ab = sum(p.batting.AB for p in my_players)
+        t_h = sum(p.batting.H for p in my_players)
+        t_hr = sum(p.batting.HR for p in my_players)
+        t_avg = t_h / t_ab if t_ab > 0 else 0.0
+        
+        t_er = sum(p.pitching.ER for p in pitchers_list)
+        t_outs = sum(p.pitching.outs for p in pitchers_list)
+        t_era = t_er * 27 / t_outs if t_outs > 0 else 0.0
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("チーム得点", result["runs_for"])
+        col2.metric("チーム打率", fmt_pct(t_avg))
+        col3.metric("チーム本塁打", t_hr)
+        
+        col4, col5, col6 = st.columns(3)
+        col4.metric("チーム失点", result["runs_against"])
+        col5.metric("チーム防御率", f"{t_era:.2f}")
+
+    # 順位表
+    with tab_standings:
         league_opponents = list(set(item["opponent"] for item in st.session_state.schedule if item["type"] == "league"))
         
         standings_data = []
@@ -1908,12 +1967,24 @@ elif st.session_state.step == "result":
         html_table += '<div style="font-size: 13px; color: #777; margin-top: 15px; line-height: 1.6;">どのチームも143試合。勝率は引き分けを除いて計算しています（勝÷（勝＋敗））。<br>「差」は首位とのゲーム差です。<br>※自分以外の5球団の成績は、このゲームによる架空のシミュレーションです。</div>'
         
         st.markdown(html_table, unsafe_allow_html=True)
-        st.markdown("<br><br>", unsafe_allow_html=True)
 
+    # 全試合ログ
+    with tab_log:
+        st.subheader("全143試合 スコア・詳細記録")
         log_df = pd.DataFrame(result["game_log"])
-        with st.expander("全試合ログを表示"):
-            st.dataframe(log_df, hide_index=True, use_container_width=True, height=300)
-            st.download_button("試合結果CSV", log_df.to_csv(index=False).encode("utf-8-sig"), file_name="game_results.csv", mime="text/csv")
+        
+        # Streamlit標準のデータフレームで表示。スコアボードの改行を表示させるためにheight調整
+        st.dataframe(
+            log_df, 
+            hide_index=True, 
+            use_container_width=True, 
+            height=600,
+            column_config={
+                "イニング": st.column_config.TextColumn("スコアボード", width="medium"),
+                "本塁打": st.column_config.TextColumn("本塁打", width="large")
+            }
+        )
+        st.download_button("試合結果CSVをダウンロード", log_df.to_csv(index=False).encode("utf-8-sig"), file_name="game_results.csv", mime="text/csv")
 
     # シーズン終了演出
     wins = result["wins"]
