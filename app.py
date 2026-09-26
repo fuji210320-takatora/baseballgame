@@ -196,13 +196,28 @@ def load_fielders(source):
     require_columns(df, ["選手名", "チーム", "ミート", "パワー", "走力", "守備力"], "野手ファイル")
     players = []
     for _, row in df.iterrows():
+        team_name = str(row["チーム"]).strip()
+        contact = clean_number(row["ミート"])
+        power = clean_number(row["パワー"])
+        speed = clean_number(row["走力"])
+        
+        # 【球団データ下降補正】強すぎるコンピュータ球団のデータを読み込み時に削る
+        if team_name == "ソフトバンク":
+            contact = max(1.0, contact - 8.0)
+            power = max(1.0, power - 8.0)
+            speed = max(1.0, speed - 5.0)
+        elif team_name == "阪神":
+            contact = max(1.0, contact - 4.0)
+            power = max(1.0, power - 4.0)
+            speed = max(1.0, speed - 2.0)
+            
         players.append(
             Player(
                 name=str(row["選手名"]).strip(),
-                team=str(row["チーム"]).strip(),
-                contact=clean_number(row["ミート"]),
-                power=clean_number(row["パワー"]),
-                speed=clean_number(row["走力"]),
+                team=team_name,
+                contact=contact,
+                power=power,
+                speed=speed,
                 defense=parse_defense(row["守備力"]),
             )
         )
@@ -213,12 +228,24 @@ def load_pitchers(source):
     require_columns(df, ["選手名", "チーム", "制球", "スタミナ", "球種ランク"], "投手ファイル")
     players = []
     for _, row in df.iterrows():
+        team_name = str(row["チーム"]).strip()
+        control = clean_number(row["制球"])
+        stamina = clean_number(row["スタミナ"])
+        
+        # 【球団データ下降補正】強すぎるコンピュータ球団のデータを読み込み時に削る
+        if team_name == "ソフトバンク":
+            control = max(1.0, control - 8.0)
+            stamina = max(1.0, stamina - 8.0)
+        elif team_name == "阪神":
+            control = max(1.0, control - 4.0)
+            stamina = max(1.0, stamina - 4.0)
+            
         players.append(
             Player(
                 name=str(row["選手名"]).strip(),
-                team=str(row["チーム"]).strip(),
-                control=clean_number(row["制球"]),
-                stamina=clean_number(row["スタミナ"]),
+                team=team_name,
+                control=control,
+                stamina=stamina,
                 pitches=parse_pitches(row["球種ランク"]),
             )
         )
@@ -1986,7 +2013,7 @@ elif st.session_state.step == "result":
         col4.metric("チーム失点", result["runs_against"])
         col5.metric("チーム防御率", f"{t_era:.2f}")
 
-    # 順位表（全チームの実成績から算出）
+    # 順位表
     with tab_standings:
         all_teams_data = result["all_teams_data"]
         
