@@ -235,7 +235,6 @@ def assign_initial_positions(fielders, dh=True):
         capable = [p for p in remaining if p.defense_at(pos) > 0]
         if len(capable) == 1:
             p = capable[0]
-            # 【修正】 p（選手データ）ではなく、p.name（名前文字列）でチェックして保存する
             if p.name not in assigned_players:
                 lineup.append((p, pos))
                 assigned_positions.add(pos)
@@ -283,7 +282,7 @@ def decide_batting_order(lineup_pairs):
             order[idx] = p
             pool.remove(p)
 
-    # 【新規追加】理想の打順ロジックによる割り当て
+    # 理想の打順ロジックによる割り当て
     # 4番：パワー×2 + ミート×1.2
     assign_to_order(3, lambda p: p.power * 2 + p.contact * 1.2)
     # 1番：ミート×1.7 + パワー×0.4 + 走力×2
@@ -310,7 +309,7 @@ def count_pitches_of_rank(pitcher, ranks):
     return sum(1 for r in pitcher.pitches.values() if r in ranks)
 
 def relief_sort_key(pitcher):
-    # 【新規追加】抑え・中継ぎエースの決定ロジック
+    # 抑え・中継ぎエースの決定ロジック
     # ①球種SとAの合計数、②球種Bの数、③制球力、④ランダム値 でソート
     a_count = count_pitches_of_rank(pitcher, ["S", "A"])
     b_count = count_pitches_of_rank(pitcher, ["B"])
@@ -378,6 +377,11 @@ def best_pitching_staff(team):
         "bullpen_roles": bullpen_roles,
     }
 
+def build_opponent_team(team, dh):
+    lineup = best_lineup_for_team(team, dh=dh)
+    staff = best_pitching_staff(team)
+    return {"team": team, "lineup": lineup, "staff": staff}
+
 # ============================================================
 # 成績初期化
 # ============================================================
@@ -423,7 +427,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 能力値59〜40までのデバフ
+    # 能力値59〜40までのデバフ（緩やかな二次曲線）
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
@@ -442,7 +446,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         diff = batter.power - 60.0
         power_bonus = (diff ** 2) * 0.000075
 
-    # 【新規追加】多球種による投手側ボーナス（球種が多いほど的を絞らせないデバフ）
+    # 多球種による投手側ボーナス（球種が多いほど的を絞らせないデバフ）
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
 
@@ -863,25 +867,71 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                 pitcher.pitching.outs += 1
                 if defender is not None: defender.fielding.A += 1
                 
-                # 【新規追加】犠牲フライの判定と処理
+                # 犠牲フライと内野ゴロの間の得点、および進塁打の処理
                 is_sf = False
-                if outs <= 2 and bases[2] is not None and pos in ["LF", "CF", "RF"]:
+                
+                # 3塁ランナーの生還処理
+                if outs <= 2 and bases[2] is not None:
                     runner = bases[2]
-                    arm = defender.defense_at(pos) if defender else 30.0
-                    # 走力と外野手の肩からタッチアップ成功率を計算
-                    sf_prob = 0.50 + (runner.speed - arm) * 0.005
-                    sf_prob = clamp(sf_prob, 0.10, 0.95)
-                    
-                    if random.random() < sf_prob:
-                        runs += 1
-                        batter.batting.RBI += 1
-                        runner.batting.R += 1
-                        batter.batting.SF += 1
-                        bases[2] = None
-                        is_sf = True
+                    if pos in ["LF", "CF", "RF"]:
+                        # 犠牲フライ
+                        arm = defender.defense_at(pos) if defender else 30.0
+                        sf_prob = 0.50 + (runner.speed - arm) * 0.005
+                        sf_prob = clamp(sf_prob, 0.10, 0.95)
+                        
+                        if random.random() < sf_prob:
+                            runs += 1
+                            batter.batting.RBI += 1
+                            runner.batting.R += 1
+                            batter.batting.SF += 1
+                            bases[2] = None
+                            is_sf = True
+                    elif pos in ["1B", "2B", "3B", "SS"]:
+                        # 内野ゴロの間の得点
+                        base_prob = 0.45 if pos in ["2B", "SS"] else 0.25
+                        run_prob = base_prob + (runner.speed - 40.0) * 0.004
+                        run_prob = clamp(run_prob, 0.05, 0.85)
+                        
+                        if random.random() < run_prob:
+                            runs += 1
+                            batter.batting.RBI += 1
+                            runner.batting.R += 1
+                            bases[2] = None
                 
                 if not is_sf:
                     batter.batting.AB += 1 # 犠飛にならなかったフライやゴロは打数を加算
+
+                # 2塁ランナーの進塁打処理（3塁へ）
+                if outs <= 2 and bases[2] is None and bases[1] is not None:
+                    runner2 = bases[1]
+                    adv_prob = 0.0
+                    if pos == "RF":
+                        adv_prob = 0.55 + runner2.speed * 0.004
+                    elif pos == "CF":
+                        adv_prob = 0.25 + runner2.speed * 0.003
+                    elif pos == "LF":
+                        adv_prob = 0.05
+                    elif pos in ["1B", "2B"]:
+                        adv_prob = 0.50 + runner2.speed * 0.004 # 右方向へのゴロ
+                    elif pos in ["3B", "SS"]:
+                        adv_prob = 0.10 + runner2.speed * 0.002
+                    
+                    if random.random() < clamp(adv_prob, 0.05, 0.90):
+                        bases[2] = runner2
+                        bases[1] = None
+
+                # 1塁ランナーの進塁打処理（2塁へ）
+                if outs <= 2 and bases[1] is None and bases[0] is not None:
+                    runner1 = bases[0]
+                    adv_prob = 0.0
+                    if pos in ["1B", "2B", "3B", "SS"]:
+                        # 内野ゴロでの進塁（ボテボテやエンドラン想定）
+                        adv_prob = 0.15 + runner1.speed * 0.002
+                    
+                    if random.random() < clamp(adv_prob, 0.01, 0.40):
+                        bases[1] = runner1
+                        bases[0] = None
+
             else:
                 # エラー出塁
                 batter.batting.AB += 1
@@ -1276,7 +1326,6 @@ def order_page(fielders, league):
     st.header("④ オーダー設定")
     st.info(f"選択リーグ：{league}")
 
-    # 【新規追加】自動配置ロジックで初期の守備位置と打順を決定
     initial_lineup = assign_initial_positions(fielders, dh=(league == "パ・リーグ"))
     default_pos_map = {pos: p for p, pos in initial_lineup}
 
@@ -1328,7 +1377,6 @@ def order_page(fielders, league):
         st.info("セ・リーグなので余った野手は代打要員になります。")
 
     st.subheader("打順")
-    # 【新規追加】理想の打順ロジックによるデフォルト打順取得
     lineup_default = decide_batting_order(lineup)
     names = [p.name for p, _ in lineup_default]
     ordered = []
@@ -1364,7 +1412,6 @@ def pitching_page(pitchers):
         st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1人が必要です。")
         return None
 
-    # 【新規追加】投手起用の自動初期設定
     if "pitcher_roles" not in st.session_state:
         st.session_state.pitcher_roles = decide_pitcher_roles(pitchers)
 
@@ -1401,11 +1448,6 @@ def pitching_page(pitchers):
         return {"starters": starters, "bullpen": bullpen, "closer": closer, "bullpen_roles": bullpen_roles}
 
     return None
-
-def build_opponent_team(team, dh):
-    lineup = best_lineup_for_team(team, dh=dh)
-    staff = best_pitching_staff(team)
-    return {"team": team, "lineup": lineup, "staff": staff}
 
 # ============================================================
 # アプリケーション実行
