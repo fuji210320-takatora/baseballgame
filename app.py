@@ -196,28 +196,13 @@ def load_fielders(source):
     require_columns(df, ["選手名", "チーム", "ミート", "パワー", "走力", "守備力"], "野手ファイル")
     players = []
     for _, row in df.iterrows():
-        team_name = str(row["チーム"]).strip()
-        contact = clean_number(row["ミート"])
-        power = clean_number(row["パワー"])
-        speed = clean_number(row["走力"])
-        
-        # 【球団データ下降補正】強すぎるコンピュータ球団のデータを読み込み時に削る
-        if team_name == "ソフトバンク":
-            contact = max(1.0, contact - 8.0)
-            power = max(1.0, power - 8.0)
-            speed = max(1.0, speed - 5.0)
-        elif team_name == "阪神":
-            contact = max(1.0, contact - 4.0)
-            power = max(1.0, power - 4.0)
-            speed = max(1.0, speed - 2.0)
-            
         players.append(
             Player(
                 name=str(row["選手名"]).strip(),
-                team=team_name,
-                contact=contact,
-                power=power,
-                speed=speed,
+                team=str(row["チーム"]).strip(),
+                contact=clean_number(row["ミート"]),
+                power=clean_number(row["パワー"]),
+                speed=clean_number(row["走力"]),
                 defense=parse_defense(row["守備力"]),
             )
         )
@@ -228,24 +213,12 @@ def load_pitchers(source):
     require_columns(df, ["選手名", "チーム", "制球", "スタミナ", "球種ランク"], "投手ファイル")
     players = []
     for _, row in df.iterrows():
-        team_name = str(row["チーム"]).strip()
-        control = clean_number(row["制球"])
-        stamina = clean_number(row["スタミナ"])
-        
-        # 【球団データ下降補正】強すぎるコンピュータ球団のデータを読み込み時に削る
-        if team_name == "ソフトバンク":
-            control = max(1.0, control - 8.0)
-            stamina = max(1.0, stamina - 8.0)
-        elif team_name == "阪神":
-            control = max(1.0, control - 4.0)
-            stamina = max(1.0, stamina - 4.0)
-            
         players.append(
             Player(
                 name=str(row["選手名"]).strip(),
-                team=team_name,
-                control=control,
-                stamina=stamina,
+                team=str(row["チーム"]).strip(),
+                control=clean_number(row["制球"]),
+                stamina=clean_number(row["スタミナ"]),
                 pitches=parse_pitches(row["球種ランク"]),
             )
         )
@@ -1021,9 +994,13 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         if league == "セ・リーグ" and op_pitcher:
             if len(offense_op) == 8: offense_op.append((op_pitcher, "P"))
 
-        r_op, hrs_op = simulate_half_inning(
-            [p for p, _ in offense_op], op_batting_index, my_pitcher, defense_my, league, inning=inning, top_bottom="表"
-        ) if my_pitcher else (0, [])
+        if my_pitcher:
+            r_op, hrs_op = simulate_half_inning(
+                [p for p, _ in offense_op], op_batting_index, my_pitcher, defense_my, league, inning=inning, top_bottom="表"
+            )
+        else:
+            r_op, hrs_op = 0, []
+            
         op_score += r_op
         op_linescore.append(str(r_op))
         hr_events.extend(hrs_op)
@@ -1055,9 +1032,13 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         if league == "セ・リーグ" and my_pitcher:
             if len(offense_my) == 8: offense_my.append((my_pitcher, "P"))
 
-        r_my, hrs_my = simulate_half_inning(
-            [p for p, _ in offense_my], my_batting_index, op_pitcher, defense_op, league, inning=inning, top_bottom="裏"
-        ) if op_pitcher else (0, [])
+        if op_pitcher:
+            r_my, hrs_my = simulate_half_inning(
+                [p for p, _ in offense_my], my_batting_index, op_pitcher, defense_op, league, inning=inning, top_bottom="裏"
+            )
+        else:
+            r_my, hrs_my = 0, []
+            
         my_score += r_my
         my_linescore.append(str(r_my))
         hr_events.extend(hrs_my)
@@ -1106,7 +1087,7 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         if losing_pitcher is not None:
             losing_pitcher.pitching.L += 1
 
-        if my_pitcher is my_pitching.closer and my_pitching.save_eligible and my_pitcher is not winning_pitcher:
+        if my_pitcher and my_pitcher is my_pitching.closer and my_pitching.save_eligible and my_pitcher is not winning_pitcher:
             my_pitcher.pitching.SV += 1
             save_pitcher = my_pitcher
 
@@ -1124,7 +1105,7 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         if losing_pitcher is not None:
             losing_pitcher.pitching.L += 1
 
-        if op_pitcher is op_pitching.closer and op_pitching.save_eligible and op_pitcher is not winning_pitcher:
+        if op_pitcher and op_pitcher is op_pitching.closer and op_pitching.save_eligible and op_pitcher is not winning_pitcher:
             op_pitcher.pitching.SV += 1
             save_pitcher = op_pitcher
 
@@ -1711,7 +1692,36 @@ elif st.session_state.step == "season":
     teams = st.session_state.teams
     my_league = st.session_state.my_league
     
-    reset_stats(fielders_all + pitchers_all)
+    # 【コンピュータ球団専用の下降補正】
+    # ドラフト時のマイチームの選手には影響させず、敵として登場するコンピュータのチームのみ弱体化
+    for t_name, team_obj in teams.items():
+        if t_name == "ソフトバンク":
+            for p in team_obj.fielders:
+                p.contact = max(1.0, p.contact - 8.0)
+                p.power = max(1.0, p.power - 8.0)
+                p.speed = max(1.0, p.speed - 5.0)
+            for p in team_obj.pitchers:
+                p.control = max(1.0, p.control - 8.0)
+                p.stamina = max(1.0, p.stamina - 8.0)
+        elif t_name == "阪神":
+            for p in team_obj.fielders:
+                p.contact = max(1.0, p.contact - 4.0)
+                p.power = max(1.0, p.power - 4.0)
+                p.speed = max(1.0, p.speed - 2.0)
+            for p in team_obj.pitchers:
+                p.control = max(1.0, p.control - 4.0)
+                p.stamina = max(1.0, p.stamina - 4.0)
+                
+    # 今回のシミュレーションに参加する全ての選手の成績データをゼロにリセット
+    all_sim_players = list(fielders_all) + list(pitchers_all)
+    all_sim_players.extend([p for p, _ in st.session_state.my_lineup])
+    if st.session_state.my_bench:
+        all_sim_players.append(st.session_state.my_bench)
+    all_sim_players.extend(st.session_state.my_staff["starters"])
+    all_sim_players.extend(st.session_state.my_staff["bullpen"])
+    if st.session_state.my_staff["closer"]:
+        all_sim_players.append(st.session_state.my_staff["closer"])
+    reset_stats(all_sim_players)
     
     all_teams_data = {}
     all_participating_teams = st.session_state.league_central + st.session_state.league_pacific
