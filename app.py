@@ -235,10 +235,11 @@ def assign_initial_positions(fielders, dh=True):
         capable = [p for p in remaining if p.defense_at(pos) > 0]
         if len(capable) == 1:
             p = capable[0]
-            if p not in assigned_players:
+            # 【修正】 p（選手データ）ではなく、p.name（名前文字列）でチェックして保存する
+            if p.name not in assigned_players:
                 lineup.append((p, pos))
                 assigned_positions.add(pos)
-                assigned_players.add(p)
+                assigned_players.add(p.name)
                 remaining.remove(p)
                 
     # 2. 残りは「ミパ走」の合計値順に埋める
