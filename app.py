@@ -814,19 +814,41 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
     catcher = defense.get("C")
     if catcher is None: return bases
     candidates = []
+    
+    # 1塁のみ、または2塁のみの場合に盗塁を検討（企図率のベースを現実に寄せて低下）
     if bases[0] is not None and bases[1] is None:
-        candidates.append((0, 1, 0.10, 0.34))
+        candidates.append((0, 1, 0.03, 0.15))
     if bases[1] is not None and bases[2] is None:
-        candidates.append((1, 2, 0.045, 0.22))
+        candidates.append((1, 2, 0.01, 0.08))
+        
     if not candidates: return bases
 
-    from_base, to_base, base_attempt, speed_factor = candidates[0]
+    from_base, to_base, base_attempt, max_attempt = candidates[0]
     runner = bases[from_base]
-    attempt_prob = base_attempt + runner.speed / 500.0
-    attempt_prob = clamp(attempt_prob, 0.03, 0.34 if from_base == 0 else 0.18)
+    
+    # 企図率 (走力50で約9%、走力80で約13%程度に抑制)
+    attempt_prob = base_attempt + (runner.speed / 800.0)
+    attempt_prob = clamp(attempt_prob, 0.01, max_attempt)
 
     if random.random() >= attempt_prob:
         return bases
+
+    # 成功率 (プロ野球の平均的な成功率70%をベースに、走力と捕手肩力で補正)
+    catcher_def = catcher.defense_at("C")
+    success_prob = 0.70 + (runner.speed - 50.0) * 0.008 - (catcher_def - 50.0) * 0.006
+    success_prob = clamp(success_prob, 0.30, 0.95)
+
+    if random.random() < success_prob:
+        bases[from_base] = None
+        bases[to_base] = runner
+        runner.batting.SB += 1
+    else:
+        bases[from_base] = None
+        runner.batting.CS += 1
+        if game_state is not None:
+            game_state["outs"] += 1
+            
+    return bases
 
     catcher_def = catcher.defense_at("C")
     success_prob = (0.10 + (runner.speed - 30.0) * 0.007 - (catcher_def - 30.0) * 0.004)
