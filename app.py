@@ -283,16 +283,11 @@ def decide_batting_order(lineup_pairs):
             pool.remove(p)
 
     # 理想の打順ロジックによる割り当て
-    # 4番：パワー×2 + ミート×1.2
-    assign_to_order(3, lambda p: p.power * 2 + p.contact * 1.2)
-    # 1番：ミート×1.7 + パワー×0.4 + 走力×2
-    assign_to_order(0, lambda p: p.contact * 1.7 + p.power * 0.4 + p.speed * 2)
-    # 2番：ミート×1.3 + パワー×1.1 + 走力
-    assign_to_order(1, lambda p: p.contact * 1.3 + p.power * 1.1 + p.speed)
-    # 5番：パワー×2 + ミート
-    assign_to_order(4, lambda p: p.power * 2 + p.contact)
-    # 3番：ミート + パワー×2
-    assign_to_order(2, lambda p: p.contact + p.power * 2)
+    assign_to_order(3, lambda p: p.power * 2 + p.contact * 1.2) # 4番
+    assign_to_order(0, lambda p: p.contact * 1.7 + p.power * 0.4 + p.speed * 2) # 1番
+    assign_to_order(1, lambda p: p.contact * 1.3 + p.power * 1.1 + p.speed) # 2番
+    assign_to_order(4, lambda p: p.power * 2 + p.contact) # 5番
+    assign_to_order(2, lambda p: p.contact + p.power * 2) # 3番
 
     # 残り（6, 7, 8, 9番）はミート+パワー順で配置
     pool.sort(key=lambda x: x[0].contact + x[0].power, reverse=True)
@@ -310,7 +305,6 @@ def count_pitches_of_rank(pitcher, ranks):
 
 def relief_sort_key(pitcher):
     # 抑え・中継ぎエースの決定ロジック
-    # ①球種SとAの合計数、②球種Bの数、③制球力、④ランダム値 でソート
     a_count = count_pitches_of_rank(pitcher, ["S", "A"])
     b_count = count_pitches_of_rank(pitcher, ["B"])
     return (a_count, b_count, pitcher.control, random.random())
@@ -427,7 +421,6 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 能力値59〜40までのデバフ（緩やかな二次曲線）
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
@@ -440,17 +433,14 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         diff = 60.0 - effective_power
         power_penalty = (diff * 0.5) + ((diff ** 2) * 0.02)
 
-    # パワー60以上の打者へのアーチストボーナス
     power_bonus = 0.0
     if batter.power > 60.0:
         diff = batter.power - 60.0
         power_bonus = (diff ** 2) * 0.000075
 
-    # 多球種による投手側ボーナス（球種が多いほど的を絞らせないデバフ）
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
 
-    # ペナルティとボーナスを確率に反映
     single = BASE_PA["single"] + contact_diff * 0.0008 - (contact_penalty * 0.0010) - variety_debuff
     double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002) - (variety_debuff * 0.5)
     triple = BASE_PA["triple"] + batter.speed * 0.000015
@@ -458,7 +448,6 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     walk = BASE_PA["walk"] - control_diff * 0.0012
     so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
 
-    # 投手の能力（球質）による制圧力
     quality_delta = quality - 55.0
     single -= quality_delta * 0.00045
     double -= quality_delta * 0.00025
@@ -471,7 +460,6 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         walk += (1.0 - fatigue) * 0.02
         so -= (1.0 - fatigue) * 0.03
 
-    # 打撃成績の天井と底
     single = clamp(single, 0.01, 0.30)
     double = clamp(double, 0.002, 0.12)
     triple = clamp(triple, 0.001, 0.03)
@@ -524,7 +512,6 @@ def resolve_outcome(result, defense):
     error_prob = base_error_prob * (1.0 + ability_factor)
     error_prob = clamp(error_prob, 0.0009, 0.0050)
 
-    # UZRのスケール適正化
     if random.random() >= error_prob:
         defender.fielding.PO += 1
         defender.fielding.UZR += (ability - 50.0) / 1200.0
@@ -867,14 +854,11 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                 pitcher.pitching.outs += 1
                 if defender is not None: defender.fielding.A += 1
                 
-                # 犠牲フライと内野ゴロの間の得点、および進塁打の処理
                 is_sf = False
                 
-                # 3塁ランナーの生還処理
                 if outs <= 2 and bases[2] is not None:
                     runner = bases[2]
                     if pos in ["LF", "CF", "RF"]:
-                        # 犠牲フライ
                         arm = defender.defense_at(pos) if defender else 30.0
                         sf_prob = 0.50 + (runner.speed - arm) * 0.005
                         sf_prob = clamp(sf_prob, 0.10, 0.95)
@@ -887,7 +871,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                             bases[2] = None
                             is_sf = True
                     elif pos in ["1B", "2B", "3B", "SS"]:
-                        # 内野ゴロの間の得点
                         base_prob = 0.45 if pos in ["2B", "SS"] else 0.25
                         run_prob = base_prob + (runner.speed - 40.0) * 0.004
                         run_prob = clamp(run_prob, 0.05, 0.85)
@@ -899,9 +882,8 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                             bases[2] = None
                 
                 if not is_sf:
-                    batter.batting.AB += 1 # 犠飛にならなかったフライやゴロは打数を加算
+                    batter.batting.AB += 1
 
-                # 2塁ランナーの進塁打処理（3塁へ）
                 if outs <= 2 and bases[2] is None and bases[1] is not None:
                     runner2 = bases[1]
                     adv_prob = 0.0
@@ -912,7 +894,7 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                     elif pos == "LF":
                         adv_prob = 0.05
                     elif pos in ["1B", "2B"]:
-                        adv_prob = 0.50 + runner2.speed * 0.004 # 右方向へのゴロ
+                        adv_prob = 0.50 + runner2.speed * 0.004
                     elif pos in ["3B", "SS"]:
                         adv_prob = 0.10 + runner2.speed * 0.002
                     
@@ -920,12 +902,10 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                         bases[2] = runner2
                         bases[1] = None
 
-                # 1塁ランナーの進塁打処理（2塁へ）
                 if outs <= 2 and bases[1] is None and bases[0] is not None:
                     runner1 = bases[0]
                     adv_prob = 0.0
                     if pos in ["1B", "2B", "3B", "SS"]:
-                        # 内野ゴロでの進塁（ボテボテやエンドラン想定）
                         adv_prob = 0.15 + runner1.speed * 0.002
                     
                     if random.random() < clamp(adv_prob, 0.01, 0.40):
@@ -933,7 +913,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                         bases[0] = None
 
             else:
-                # エラー出塁
                 batter.batting.AB += 1
                 if defender is not None: pass
                 if bases[0] is None:
@@ -962,13 +941,10 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
     my_pitcher = my_pitching.choose_starter(game_number)
     op_pitcher = op_pitching.choose_starter(game_number)
 
-    my_losing_candidate = None
-    op_losing_candidate = None
-    my_score_diff_prev = 0
-    op_score_diff_prev = 0
-
-    if my_pitcher is None or op_pitcher is None:
-        return 0, 0, {}
+    # 勝利投手判定用のトラッキング変数
+    lead_state = 0 # 0: 同点, 1: 自チームリード, -1: 相手チームリード
+    my_por = my_pitcher  # ピッチャー・オブ・レコード（自）
+    op_por = op_pitcher  # ピッチャー・オブ・レコード（相）
 
     my_score = 0
     op_score = 0
@@ -983,24 +959,15 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
         op_pitcher.batting.G += 1
 
     for inning in range(1, 13):
-        my_diff = my_score - op_score
-        if my_diff < 0 and my_score_diff_prev >= 0:
-            my_losing_candidate = my_pitcher
-        elif my_diff >= 0:
-            my_losing_candidate = None
-
-        if my_pitching.should_replace(my_diff, inning, my_pitcher.pitching.outs):
-            old_pitcher = my_pitcher
-            my_pitcher = my_pitching.replace(inning, my_diff)
-            if my_diff < 0 and my_losing_candidate is None:
-                my_losing_candidate = old_pitcher
+        # 表（相手の攻撃）
+        if my_pitching.should_replace(my_score - op_score, inning, my_pitcher.pitching.outs):
+            my_pitcher = my_pitching.replace(inning, my_score - op_score)
 
         defense_my = {pos: player for player, pos in my_lineup if pos != "DH"}
         offense_op = list(op_lineup)
         if league == "セ・リーグ":
             if len(offense_op) == 8: offense_op.append((op_pitcher, "P"))
 
-        op_runs_before = op_score
         r, _ = simulate_half_inning(
             [p for p, _ in offense_op], op_batting_index, my_pitcher, defense_my, league, inning=inning
         )
@@ -1010,19 +977,22 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
         my_pitching.pitcher_earned[id(my_pitcher)] += r
         my_pitcher.pitching.R += r
         my_pitcher.pitching.ER += r
-        my_score_diff_prev = my_score - op_score
 
-        op_diff = op_score - my_score
-        if op_diff < 0 and op_score_diff_prev >= 0:
-            op_losing_candidate = op_pitcher
-        elif op_diff >= 0:
-            op_losing_candidate = None
+        # リード状態の更新（勝ち越された瞬間、その時の投手に勝敗の権利が移る）
+        if op_score > my_score and lead_state != -1:
+            lead_state = -1
+            my_por = my_pitcher
+            op_por = op_pitcher
+        elif op_score == my_score:
+            lead_state = 0
 
-        if op_pitching.should_replace(op_diff, inning, op_pitcher.pitching.outs):
-            old_pitcher = op_pitcher
-            op_pitcher = op_pitching.replace(inning, op_diff)
-            if op_diff < 0 and op_losing_candidate is None:
-                op_losing_candidate = old_pitcher
+        # 9回以降、表の攻撃終了時点で自チームがリードしていれば裏の攻撃は行わずに終了
+        if inning >= 9 and my_score > op_score:
+            break
+
+        # 裏（自チームの攻撃）
+        if op_pitching.should_replace(op_score - my_score, inning, op_pitcher.pitching.outs):
+            op_pitcher = op_pitching.replace(inning, op_score - my_score)
 
         defense_op = {pos: player for player, pos in op_lineup if pos != "DH"}
         offense_my = list(my_lineup)
@@ -1038,45 +1008,68 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, game_number)
         op_pitching.pitcher_earned[id(op_pitcher)] += r
         op_pitcher.pitching.R += r
         op_pitcher.pitching.ER += r
-        op_score_diff_prev = op_score - my_score
 
+        if my_score > op_score and lead_state != 1:
+            lead_state = 1
+            my_por = my_pitcher
+            op_por = op_pitcher
+        elif my_score == op_score:
+            lead_state = 0
+
+        # 9回以降、裏の攻撃終了時点で同点でなければ終了（サヨナラ勝ちなど）
         if inning >= 9 and my_score != op_score:
             break
 
-    if my_score > op_score:
-        starter = my_pitching.starters[game_number % len(my_pitching.starters)] if my_pitching.starters else None
-        starter_outs = 0
-        if starter is not None:
-            starter_outs = starter.pitching.outs - my_pitching.appearance_start_outs.get(id(starter), starter.pitching.outs)
+    # ====== 勝利投手の決定ロジック（公式ルール準拠） ======
+    def resolve_win(win_pitching_state, win_por):
+        win_p = win_por
+        if win_p in win_pitching_state.starters:
+            outs = win_p.pitching.outs - win_pitching_state.appearance_start_outs.get(id(win_p), win_p.pitching.outs)
+            if outs < 15: # 先発投手が5回（15アウト）未満で降板した場合は勝利投手の権利なし
+                # その後の救援陣の中で、最も投球回が多かった投手に勝利を与える
+                relievers = [p for p in win_pitching_state.game_pitchers if p not in win_pitching_state.starters]
+                if relievers:
+                    pitcher_outs = [(p, p.pitching.outs - win_pitching_state.appearance_start_outs.get(id(p), p.pitching.outs)) for p in relievers]
+                    max_outs = max((o for p, o in pitcher_outs), default=0)
+                    candidates = [p for p, o in pitcher_outs if o == max_outs]
+                    if candidates:
+                        win_p = random.choice(candidates)
+        return win_p
 
-        if starter is not None and starter_outs >= 15:
-            winning_pitcher = starter
-        else:
-            pitcher_outs = []
-            for p in my_pitching.game_pitchers:
-                outs_p = p.pitching.outs - my_pitching.appearance_start_outs.get(id(p), p.pitching.outs)
-                pitcher_outs.append((p, outs_p))
-            max_outs = max((outs_p for _, outs_p in pitcher_outs), default=0)
-            candidates = [p for p, outs_p in pitcher_outs if outs_p == max_outs]
-            winning_pitcher = random.choice(candidates) if candidates else starter
+    if my_score > op_score:
+        winning_pitcher = resolve_win(my_pitching, my_por)
+        losing_pitcher = op_por
 
         if winning_pitcher is not None:
             winning_pitcher.pitching.W += 1
             if winning_pitcher in my_pitching.game_holds:
-                winning_pitcher.pitching.HLD -= 1
-                my_pitching.game_holds.remove(winning_pitcher)
-            if winning_pitcher is my_pitching.closer:
-                my_pitching.save_eligible = False
+                my_pitching.game_holds.remove(winning_pitcher) # 勝利投手にはホールドがつかない
+
+        if losing_pitcher is not None:
+            losing_pitcher.pitching.L += 1
 
         if my_pitcher is my_pitching.closer and my_pitching.save_eligible and my_pitcher is not winning_pitcher:
             my_pitcher.pitching.SV += 1
 
-        return my_score, op_score, {"result": "W", "winning_pitcher": winning_pitcher}
+        return my_score, op_score, {"result": "W", "winning_pitcher": winning_pitcher, "losing_pitcher": losing_pitcher}
+
     elif my_score < op_score:
-        losing_pitcher = my_losing_candidate or my_pitcher
+        winning_pitcher = resolve_win(op_pitching, op_por)
+        losing_pitcher = my_por
+
+        if winning_pitcher is not None:
+            winning_pitcher.pitching.W += 1
+            if winning_pitcher in op_pitching.game_holds:
+                op_pitching.game_holds.remove(winning_pitcher)
+
         if losing_pitcher is not None:
             losing_pitcher.pitching.L += 1
-        return my_score, op_score, {"result": "L", "losing_pitcher": losing_pitcher}
+
+        if op_pitcher is op_pitching.closer and op_pitching.save_eligible and op_pitcher is not winning_pitcher:
+            op_pitcher.pitching.SV += 1
+
+        return my_score, op_score, {"result": "L", "winning_pitcher": winning_pitcher, "losing_pitcher": losing_pitcher}
+
     else:
         return my_score, op_score, {"result": "D"}
 
@@ -1531,9 +1524,6 @@ if st.session_state.step == "start":
         st.session_state.step = "league_setup"
         st.rerun()
 
-# ============================================================
-# 状態遷移の制御
-# ============================================================
 elif st.session_state.step == "league_setup":
     st.header("① NPBリーグ設定")
     st.write("12球団のリーグ所属は固定です。")
