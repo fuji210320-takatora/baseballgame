@@ -57,13 +57,14 @@ RANK_WEIGHT = {
     "G": 0.35,
 }
 
+# 【得点力アップ調整】ヒットと四球の基礎確率を微増させ、出塁率を現実の平均(.315前後)に近づける
 BASE_PA = {
-    "single": 0.155,
-    "double": 0.045,
+    "single": 0.160,   # 0.155 -> 0.160
+    "double": 0.048,   # 0.045 -> 0.048
     "triple": 0.004,
     "hr": 0.018,
-    "walk": 0.075,
-    "so": 0.230,
+    "walk": 0.082,     # 0.075 -> 0.082
+    "so": 0.220,       # 0.230 -> 0.220
 }
 
 SCHEDULE_SAME = 25
@@ -446,17 +447,18 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
+    # 【調整】低能力のペナルティをマイルドにして、下位打線の極端なブラックホール化を防ぐ
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
         diff = 60.0 - effective_contact
-        contact_penalty = (diff * 0.5) + ((diff ** 2) * 0.02)
+        contact_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
     power_penalty = 0.0
     if batter.power < 60.0:
         effective_power = max(40.0, batter.power)
         diff = 60.0 - effective_power
-        power_penalty = (diff * 0.5) + ((diff ** 2) * 0.02)
+        power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
     power_bonus = 0.0
     if batter.power > 60.0:
@@ -478,7 +480,8 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     walk = BASE_PA["walk"] - control_diff * 0.0012
     so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
 
-    quality_delta = quality - 60.0
+    # 【調整】投手の基準球質を65.0（Cランク相当）に設定（60.0だと投高になりすぎるため）
+    quality_delta = quality - 65.0
     single -= quality_delta * 0.00045
     double -= quality_delta * 0.00025
     hr -= quality_delta * 0.00030
@@ -581,6 +584,7 @@ def advance_on_hit(bases, batter, result):
             runs += 1
             scoring.append(bases[2])
         if bases[1] is not None:
+            # 【調整】二塁ランナーの生還率アップ
             run_prob = 0.55 + bases[1].speed / 300.0
             if random.random() < clamp(run_prob, 0.55, 0.90):
                 runs += 1
@@ -588,7 +592,8 @@ def advance_on_hit(bases, batter, result):
             else:
                 new_bases[2] = bases[1]
         if bases[0] is not None:
-            run_prob = 0.30 + bases[0].speed / 250.0
+            # 【調整】一塁ランナーの生還率アップ
+            run_prob = 0.40 + bases[0].speed / 250.0
             if random.random() < clamp(run_prob, 0.30, 0.82):
                 runs += 1
                 scoring.append(bases[0])
@@ -601,14 +606,21 @@ def advance_on_hit(bases, batter, result):
         runs += 1
         scoring.append(bases[2])
     if bases[1] is not None:
-        run_prob = 0.45 + bases[1].speed / 250.0
-        if random.random() < clamp(run_prob, 0.45, 0.90):
+        # 【調整】二塁ランナーの生還率アップ（単打時）
+        run_prob = 0.55 + bases[1].speed / 250.0
+        if random.random() < clamp(run_prob, 0.55, 0.95):
             runs += 1
             scoring.append(bases[1])
         else:
             new_bases[2] = bases[1]
     if bases[0] is not None:
-        new_bases[1] = bases[0]
+        # 【追加】単打で一塁ランナーが三塁に進む処理
+        run3_prob = 0.25 + bases[0].speed / 300.0
+        if random.random() < clamp(run3_prob, 0.10, 0.70):
+            new_bases[2] = bases[0]
+        else:
+            new_bases[1] = bases[0]
+            
     new_bases[0] = batter
     return new_bases, runs, scoring
 
@@ -937,7 +949,8 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                     runner1 = bases[0]
                     adv_prob = 0.0
                     if pos in ["1B", "2B", "3B", "SS"]:
-                        adv_prob = 0.15 + runner1.speed * 0.002
+                        # 【調整】バントがない分の進塁打確率アップ
+                        adv_prob = 0.35 + runner1.speed * 0.002
                     if random.random() < clamp(adv_prob, 0.01, 0.40):
                         bases[1] = runner1
                         bases[0] = None
@@ -1200,7 +1213,6 @@ def render_test_simulator(fielders_base, pitchers_base):
         test_fielders = [copy.deepcopy(p) for p in fielders_base if p.team not in exclude_teams]
         test_pitchers = [copy.deepcopy(p) for p in pitchers_base if p.team not in exclude_teams]
         
-        # 相手コンピュータ球団の構築
         comp_fielders = copy.deepcopy(fielders_base)
         comp_pitchers = copy.deepcopy(pitchers_base)
         for p in comp_fielders + comp_pitchers:
@@ -1237,7 +1249,6 @@ def render_test_simulator(fielders_base, pitchers_base):
         status_text = st.empty()
         total_targets = len(test_fielders) + len(test_pitchers)
         
-        # フラットな基準守備陣
         dummy_def = Player(name="Dummy", team="Dummy")
         dummy_def.defense = {pos: 50.0 for pos in POSITIONS}
         def_dict = {pos: dummy_def for pos in POSITIONS}
@@ -1245,7 +1256,6 @@ def render_test_simulator(fielders_base, pitchers_base):
         b_idx = 0
         p_idx = 0
         
-        # 全員が目標に達するまで対戦を回す
         while len(completed_fielders) < len(test_fielders) or len(completed_pitchers) < len(test_pitchers):
             opp_name = random.choice(available_opp_names)
             opp_team = opp_teams[opp_name]
@@ -1254,7 +1264,6 @@ def render_test_simulator(fielders_base, pitchers_base):
             opp_pitcher = random.choice(opp_staff["starters"] + opp_staff["bullpen"])
             opp_def = {pos: p for p, pos in opp_obj["lineup"] if pos != "DH"}
             
-            # --- マイチームの攻撃（1イニング） ---
             if len(completed_fielders) < len(test_fielders):
                 inning_outs = 0
                 bases = [None, None, None]
@@ -1319,7 +1328,6 @@ def render_test_simulator(fielders_base, pitchers_base):
                         f_pool = [p for p in test_fielders if p.name not in completed_fielders]
                         if not f_pool: break
 
-            # --- マイチームの守備（1イニング） ---
             if len(completed_pitchers) < len(test_pitchers):
                 pitcher = p_pool[p_idx % len(p_pool)]
                 p_idx += 1
@@ -1397,7 +1405,6 @@ def render_test_simulator(fielders_base, pitchers_base):
 
         status_text.success("シミュレーション完了！1シーズン相当に換算したデータを算出しました。")
         
-        # --- 1シーズン（500打席換算）の打撃成績 ---
         bat_rows = []
         for p in test_fielders:
             b = p.batting
@@ -1422,7 +1429,6 @@ def render_test_simulator(fielders_base, pitchers_base):
                 "実打席数": b.PA
             })
             
-        # --- 1シーズン（143投球回換算）の投球成績 ---
         pit_rows = []
         for p in test_pitchers:
             pt = p.pitching
@@ -1451,7 +1457,6 @@ def render_test_simulator(fielders_base, pitchers_base):
         
         st.subheader("📊 1シーズン相当（143投球回換算）の平均投球成績")
         st.dataframe(pd.DataFrame(pit_rows).sort_values("防御率", ascending=True), hide_index=True, use_container_width=True)
-
 
 # ============================================================
 # ドラフト画面
