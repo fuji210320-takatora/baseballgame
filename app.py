@@ -472,15 +472,13 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     if batter.power >= 80.0:
         walk_bonus += (batter.power - 80.0) * 0.0015
 
-    # 【修正】パワー58以上へのHR確率ボーナス
+    # パワー58以上へのHR確率ボーナス
     hr_bonus = 0.0
     if batter.power >= 58.0:
         if batter.power < 80.0:
-            # 58〜79までは二次関数でグイッと上げる
             diff_58 = batter.power - 58.0
             hr_bonus = (diff_58 * 0.0005) + ((diff_58 ** 2) * 0.00006)
         else:
-            # 80(Aランク)以降は緩やかな一次関数的増加に切り替え
             diff_to_80 = 80.0 - 58.0
             base_bonus_at_80 = (diff_to_80 * 0.0005) + ((diff_to_80 ** 2) * 0.00006)
             diff_over_80 = batter.power - 80.0
@@ -493,7 +491,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     # hr_bonusをホームランに加算
     hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + hr_bonus - (variety_debuff * 0.5)
     
-    # 【修正】打率を変えないために、増えたHRの分だけ単打と二塁打の確率を減らす
+    # 打率を変えないために、増えたHRの分だけ単打と二塁打の確率を減らす
     single -= hr_bonus * 0.75
     double -= hr_bonus * 0.25
     
@@ -505,7 +503,9 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     single -= quality_delta * 0.00045
     double -= quality_delta * 0.00025
     hr -= quality_delta * 0.00030
-    so += quality_delta * 0.0028
+    
+    # 【変更】球種ランク（球質）による奪三振力の影響をさらに強化（約1.6倍）
+    so += quality_delta * 0.0045
 
     if fatigue < 1.0:
         single += (1.0 - fatigue) * 0.03
