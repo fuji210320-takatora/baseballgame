@@ -1116,92 +1116,94 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         return my_score, op_score, {"result": "D", "winning_pitcher": None, "losing_pitcher": None, "save_pitcher": None, "my_linescore": my_linescore, "op_linescore": op_linescore, "hrs": hr_events}
 
 # ============================================================
-# テストシミュレーター用関数 (均等機会)
+# テストシミュレーター用関数 (実戦他球団対決・1シーズン換算)
 # ============================================================
 def render_test_simulator(fielders_base, pitchers_base):
-    st.header("🧪 能力値テストシミュレーター（均等機会モード）")
-    st.write("全選手が1つの巨大なチームとなり、「全く同じ打席数」「全く同じ投球回」を消化するまで裏で延々と紅白戦を行います。")
-    st.write("※味方守備力や相手投手のレベルなどの「環境」が完全にフラットになるため、純粋な能力値テストとして使えます。")
+    st.header("🧪 実戦シミュレーター（他球団対戦・1シーズン換算）")
+    st.write("対象となる全選手が「マイチーム」に所属し、NPB各球団（コンピュータの主力チーム）と実戦形式で対戦します。")
+    st.write("設定した打席数・投球回に達するまで試合を行い、**「1シーズン分（500打席 / 143投球回）に換算したらどうなるか」**を算出します。")
     
     all_teams = sorted(list(set([p.team for p in fielders_base])))
-    exclude_teams = st.multiselect("除外するチーム（選択したチームの選手はシミュレーションに参加しません）", options=all_teams, default=[])
+    exclude_teams = st.multiselect("除外するチーム（所属選手をテスト対象外とし、対戦相手からも除外）", options=all_teams, default=[])
     
     col1, col2 = st.columns(2)
     with col1:
-        target_pa = st.number_input("野手1人あたりの目標打席数", min_value=10, max_value=2000, value=500)
+        target_pa = st.number_input("シミュレーション打席数（多めに回すほど安定します）", min_value=100, max_value=5000, value=1500)
     with col2:
-        target_ip = st.number_input("投手1人あたりの目標投球回", min_value=10, max_value=500, value=150)
+        target_ip = st.number_input("シミュレーション投球回（多めに回すほど安定します）", min_value=30, max_value=1000, value=300)
         
     if st.button("シミュレーションを実行", type="primary"):
         test_fielders = [copy.deepcopy(p) for p in fielders_base if p.team not in exclude_teams]
         test_pitchers = [copy.deepcopy(p) for p in pitchers_base if p.team not in exclude_teams]
         
-        if not test_fielders or not test_pitchers:
-            st.error("野手または投手が不足しています。除外チームを減らしてください。")
+        # 相手コンピュータ球団の構築
+        comp_fielders = copy.deepcopy(fielders_base)
+        comp_pitchers = copy.deepcopy(pitchers_base)
+        for p in comp_fielders + comp_pitchers:
+            if p.team == "ソフトバンク":
+                p.contact = max(1.0, p.contact - 8.0)
+                p.power = max(1.0, p.power - 8.0)
+                p.speed = max(1.0, p.speed - 5.0)
+                p.control = max(1.0, p.control - 8.0)
+                p.stamina = max(1.0, p.stamina - 8.0)
+            elif p.team == "阪神":
+                p.contact = max(1.0, p.contact - 4.0)
+                p.power = max(1.0, p.power - 4.0)
+                p.speed = max(1.0, p.speed - 2.0)
+                p.control = max(1.0, p.control - 4.0)
+                p.stamina = max(1.0, p.stamina - 4.0)
+                
+        opp_teams = build_teams(comp_fielders, comp_pitchers)
+        available_opp_names = [t for t in opp_teams.keys() if t not in exclude_teams]
+        
+        if not test_fielders or not test_pitchers or not available_opp_names:
+            st.error("選手または対戦球団が不足しています。")
             return
             
         reset_stats(test_fielders + test_pitchers)
-        
         target_outs = target_ip * 3
+        
         completed_fielders = set()
         completed_pitchers = set()
         
-        random.shuffle(test_fielders)
-        random.shuffle(test_pitchers)
-        
-        # 守備の影響をフラットにするため全員平均的なダミー野手を配置
-        dummy_def = Player(name="Dummy", team="Dummy")
-        dummy_def.defense = {pos: 50.0 for pos in POSITIONS}
-        defense_dict = {pos: dummy_def for pos in POSITIONS}
-        
-        p_idx = 0
-        b_idx = 0
+        f_pool = list(test_fielders)
+        p_pool = list(test_pitchers)
         
         progress_bar = st.progress(0)
         status_text = st.empty()
         total_targets = len(test_fielders) + len(test_pitchers)
         
-        # どちらかが全員目標達成するまでループ（通常はほぼ同時に終わる）
+        # フラットな基準守備陣
+        dummy_def = Player(name="Dummy", team="Dummy")
+        dummy_def.defense = {pos: 50.0 for pos in POSITIONS}
+        def_dict = {pos: dummy_def for pos in POSITIONS}
+        
+        b_idx = 0
+        p_idx = 0
+        
+        # 全員が目標に達するまで対戦を回す
         while len(completed_fielders) < len(test_fielders) or len(completed_pitchers) < len(test_pitchers):
-            pitcher = test_pitchers[p_idx % len(test_pitchers)]
-            p_idx += 1
+            opp_name = random.choice(available_opp_names)
+            opp_team = opp_teams[opp_name]
+            opp_obj = build_opponent_team(opp_team, dh=True)
+            opp_staff = opp_obj["staff"]
+            opp_pitcher = random.choice(opp_staff["starters"] + opp_staff["bullpen"])
+            opp_def = {pos: p for p, pos in opp_obj["lineup"] if pos != "DH"}
             
-            game_outs = 0
-            
-            # 1登板あたり3イニング（9アウト）投げて交代
-            for _ in range(3):
+            # --- マイチームの攻撃（1イニング） ---
+            if len(completed_fielders) < len(test_fielders):
                 inning_outs = 0
                 bases = [None, None, None]
-                
                 while inning_outs < 3:
-                    batter = test_fielders[b_idx % len(test_fielders)]
+                    batter = f_pool[b_idx % len(f_pool)]
                     b_idx += 1
                     
-                    rec_b = batter.name not in completed_fielders
-                    rec_p = pitcher.name not in completed_pitchers
-                    
-                    # 盗塁
-                    steal_state = {"outs": inning_outs}
-                    before_outs = inning_outs
-                    bases = attempt_steal(bases, test_fielders, defense_dict, steal_state)
-                    inning_outs = steal_state["outs"]
-                    st_outs_added = inning_outs - before_outs
-                    game_outs += st_outs_added
-                    if rec_p:
-                        pitcher.pitching.outs += st_outs_added
-                        if pitcher.pitching.outs >= target_outs:
-                            completed_pitchers.add(pitcher.name)
-                            
-                    if inning_outs >= 3:
-                        break
-
-                    # 対戦確率計算
-                    probs, pitch_name = at_bat_probabilities(batter, pitcher, game_outs)
-                    result = choose_result(probs)
-
+                    rec_b = (batter.name not in completed_fielders)
                     if rec_b: batter.batting.PA += 1
-                    if rec_p: pitcher.pitching.BF += 1
-
+                    
+                    probs, _ = at_bat_probabilities(batter, opp_pitcher, 0)
+                    result = choose_result(probs)
+                    
                     if result in ("single", "double", "triple", "hr"):
                         if rec_b:
                             batter.batting.AB += 1
@@ -1210,54 +1212,94 @@ def render_test_simulator(fielders_base, pitchers_base):
                             elif result == "double": batter.batting.double += 1; batter.batting.TB += 2
                             elif result == "triple": batter.batting.triple += 1; batter.batting.TB += 3
                             elif result == "hr": batter.batting.HR += 1; batter.batting.TB += 4
+                        old_bases = list(bases)
+                        bases, scored, _ = advance_on_hit(old_bases, batter, result)
+                        if rec_b and scored > 0: batter.batting.RBI += scored
+                    elif result == "walk":
+                        if rec_b: batter.batting.BB += 1
+                        bases, scored, _ = advance_on_walk(bases, batter)
+                        if rec_b and scored > 0: batter.batting.RBI += scored
+                    elif result == "so":
+                        if rec_b: batter.batting.AB += 1; batter.batting.SO += 1
+                        inning_outs += 1
+                    else:
+                        outcome, pos, defender = resolve_outcome(result, opp_def)
+                        if outcome == "field_out":
+                            inning_outs += 1
+                            is_sf = False
+                            if inning_outs <= 2 and bases[2] is not None:
+                                runner = bases[2]
+                                if pos in ["LF", "CF", "RF"]:
+                                    sf_prob = 0.50 + (runner.speed - 50.0) * 0.005
+                                    if random.random() < clamp(sf_prob, 0.10, 0.95):
+                                        if rec_b: batter.batting.RBI += 1; batter.batting.SF += 1
+                                        bases[2] = None
+                                        is_sf = True
+                                elif pos in ["1B", "2B", "3B", "SS"]:
+                                    run_prob = 0.35 + (runner.speed - 40.0) * 0.004
+                                    if random.random() < clamp(run_prob, 0.05, 0.85):
+                                        if rec_b: batter.batting.RBI += 1
+                                        bases[2] = None
+                            if not is_sf and rec_b: batter.batting.AB += 1
+                        else:
+                            if rec_b: batter.batting.AB += 1
+                            if bases[0] is None: bases[0] = batter
+                            elif bases[1] is None: bases[1] = bases[0]; bases[0] = batter
+                            elif bases[2] is None: bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = batter
+                            else:
+                                if rec_b: batter.batting.RBI += 1
+                                bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = batter
+
+                    if rec_b and batter.batting.PA >= target_pa:
+                        completed_fielders.add(batter.name)
+                        f_pool = [p for p in test_fielders if p.name not in completed_fielders]
+                        if not f_pool: break
+
+            # --- マイチームの守備（1イニング） ---
+            if len(completed_pitchers) < len(test_pitchers):
+                pitcher = p_pool[p_idx % len(p_pool)]
+                p_idx += 1
+                rec_p = (pitcher.name not in completed_pitchers)
+                
+                opp_lineup = [p for p, _ in opp_obj["lineup"]]
+                inning_outs = 0
+                bases = [None, None, None]
+                game_outs = 0
+                
+                while inning_outs < 3:
+                    opp_batter = random.choice(opp_lineup)
+                    if rec_p: pitcher.pitching.BF += 1
+                    
+                    probs, _ = at_bat_probabilities(opp_batter, pitcher, game_outs)
+                    result = choose_result(probs)
+                    
+                    if result in ("single", "double", "triple", "hr"):
                         if rec_p:
                             pitcher.pitching.H += 1
                             if result == "hr": pitcher.pitching.HR += 1
-                            
                         old_bases = list(bases)
-                        bases, scored, scoring = advance_on_hit(old_bases, batter, result)
-                        
+                        bases, scored, _ = advance_on_hit(old_bases, opp_batter, result)
                         if rec_p:
                             pitcher.pitching.R += scored
                             pitcher.pitching.ER += scored
-                            
-                        if rec_b and scored > 0:
-                            batter.batting.RBI += scored
-                            
-                        for runner in scoring:
-                            if runner.name not in completed_fielders:
-                                runner.batting.R += 1
-                                
                     elif result == "walk":
-                        if rec_b: batter.batting.BB += 1
                         if rec_p: pitcher.pitching.BB += 1
-                        
-                        bases, scored, scoring = advance_on_walk(bases, batter)
-                        
+                        bases, scored, _ = advance_on_walk(bases, opp_batter)
                         if rec_p:
                             pitcher.pitching.R += scored
                             pitcher.pitching.ER += scored
-                        if rec_b and scored > 0:
-                            batter.batting.RBI += scored
-                        for runner in scoring:
-                            if runner.name not in completed_fielders:
-                                runner.batting.R += 1
-
                     elif result == "so":
-                        if rec_b: 
-                            batter.batting.AB += 1
-                            batter.batting.SO += 1
-                        if rec_p: 
-                            pitcher.pitching.SO += 1
-                        
+                        if rec_p: pitcher.pitching.SO += 1
                         inning_outs += 1
                         game_outs += 1
                         if rec_p:
                             pitcher.pitching.outs += 1
                             if pitcher.pitching.outs >= target_outs:
                                 completed_pitchers.add(pitcher.name)
+                                p_pool = [p for p in test_pitchers if p.name not in completed_pitchers]
+                                if not p_pool: break
                     else:
-                        outcome, pos, defender = resolve_outcome(result, defense_dict)
+                        outcome, pos, defender = resolve_outcome(result, def_dict)
                         if outcome == "field_out":
                             inning_outs += 1
                             game_outs += 1
@@ -1265,91 +1307,37 @@ def render_test_simulator(fielders_base, pitchers_base):
                                 pitcher.pitching.outs += 1
                                 if pitcher.pitching.outs >= target_outs:
                                     completed_pitchers.add(pitcher.name)
-                                    
-                            is_sf = False
+                                    p_pool = [p for p in test_pitchers if p.name not in completed_pitchers]
+                                    if not p_pool: break
                             if inning_outs <= 2 and bases[2] is not None:
-                                runner = bases[2]
-                                if pos in ["LF", "CF", "RF"]:
-                                    sf_prob = 0.50 + (runner.speed - 50.0) * 0.005
-                                    sf_prob = clamp(sf_prob, 0.10, 0.95)
-                                    if random.random() < sf_prob:
-                                        if rec_p:
-                                            pitcher.pitching.R += 1
-                                            pitcher.pitching.ER += 1
-                                        if rec_b:
-                                            batter.batting.RBI += 1
-                                            batter.batting.SF += 1
-                                        if runner.name not in completed_fielders:
-                                            runner.batting.R += 1
-                                        bases[2] = None
-                                        is_sf = True
-                                elif pos in ["1B", "2B", "3B", "SS"]:
-                                    base_prob = 0.45 if pos in ["2B", "SS"] else 0.25
-                                    run_prob = base_prob + (runner.speed - 40.0) * 0.004
-                                    run_prob = clamp(run_prob, 0.05, 0.85)
-                                    if random.random() < run_prob:
-                                        if rec_p:
-                                            pitcher.pitching.R += 1
-                                            pitcher.pitching.ER += 1
-                                        if rec_b:
-                                            batter.batting.RBI += 1
-                                        if runner.name not in completed_fielders:
-                                            runner.batting.R += 1
-                                        bases[2] = None
-                            if not is_sf and rec_b:
-                                batter.batting.AB += 1
-
-                            if inning_outs <= 2 and bases[2] is None and bases[1] is not None:
-                                runner2 = bases[1]
-                                adv_prob = 0.0
-                                if pos == "RF": adv_prob = 0.55 + runner2.speed * 0.004
-                                elif pos == "CF": adv_prob = 0.25 + runner2.speed * 0.003
-                                elif pos == "LF": adv_prob = 0.05
-                                elif pos in ["1B", "2B"]: adv_prob = 0.50 + runner2.speed * 0.004
-                                elif pos in ["3B", "SS"]: adv_prob = 0.10 + runner2.speed * 0.002
-                                if random.random() < clamp(adv_prob, 0.05, 0.90):
-                                    bases[2] = runner2
-                                    bases[1] = None
-
-                            if inning_outs <= 2 and bases[1] is None and bases[0] is not None:
-                                runner1 = bases[0]
-                                adv_prob = 0.0
-                                if pos in ["1B", "2B", "3B", "SS"]:
-                                    adv_prob = 0.15 + runner1.speed * 0.002
-                                if random.random() < clamp(adv_prob, 0.01, 0.40):
-                                    bases[1] = runner1
-                                    bases[0] = None
+                                sf_prob = 0.50 + (bases[2].speed - 50.0) * 0.005
+                                if random.random() < clamp(sf_prob, 0.10, 0.95):
+                                    if rec_p:
+                                        pitcher.pitching.R += 1
+                                        pitcher.pitching.ER += 1
+                                    bases[2] = None
                         else:
-                            if rec_b: batter.batting.AB += 1
-                            if bases[0] is None:
-                                bases[0] = batter
-                            elif bases[1] is None:
-                                bases[1] = bases[0]; bases[0] = batter
-                            elif bases[2] is None:
-                                bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = batter
+                            if bases[0] is None: bases[0] = opp_batter
+                            elif bases[1] is None: bases[1] = bases[0]; bases[0] = opp_batter
+                            elif bases[2] is None: bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = opp_batter
                             else:
                                 if rec_p:
-                                    pitcher.pitching.R += 1 
-                                if rec_b:
-                                    batter.batting.RBI += 1
-                                if bases[2].name not in completed_fielders:
-                                    bases[2].batting.R += 1
-                                bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = batter
+                                    pitcher.pitching.R += 1
+                                    pitcher.pitching.ER += 1
+                                bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = opp_batter
 
-                    if rec_b and batter.batting.PA >= target_pa:
-                        completed_fielders.add(batter.name)
-                        
-            # 進捗表示
-            progress = (len(completed_fielders) + len(completed_pitchers)) / total_targets
-            progress_bar.progress(min(1.0, progress))
-            status_text.write(f"シミュレーション進行中... 打席完了者: {len(completed_fielders)}/{len(test_fielders)}  投球完了者: {len(completed_pitchers)}/{len(test_pitchers)}")
+            done_count = len(completed_fielders) + len(completed_pitchers)
+            if done_count % 5 == 0 or done_count == total_targets:
+                progress_bar.progress(done_count / total_targets)
+                status_text.write(f"実戦対戦中... 打席完了: {len(completed_fielders)}/{len(test_fielders)}人 | 投球完了: {len(completed_pitchers)}/{len(test_pitchers)}人")
 
-        status_text.success("シミュレーション完了！全員が目標値に到達しました。")
+        status_text.success("シミュレーション完了！1シーズン相当に換算したデータを算出しました。")
         
-        # 成績のDataFrame化
+        # --- 1シーズン（500打席換算）の打撃成績 ---
         bat_rows = []
         for p in test_fielders:
             b = p.batting
+            scale = 500.0 / b.PA if b.PA > 0 else 1.0
             avg = b.H / b.AB if b.AB > 0 else 0
             obp = (b.H + b.BB) / (b.AB + b.BB + b.SF) if (b.AB + b.BB + b.SF) > 0 else 0
             slg = b.TB / b.AB if b.AB > 0 else 0
@@ -1359,94 +1347,340 @@ def render_test_simulator(fielders_base, pitchers_base):
                 "球団": p.team,
                 "選手名": p.name,
                 "打率": f"{avg:.3f}".replace("0.", "."),
-                "打席": b.PA,
-                "打数": b.AB,
-                "安打": b.H,
-                "二塁打": b.double,
-                "本塁打": b.HR,
-                "打点": b.RBI,
-                "盗塁": b.SB,
-                "四球": b.BB,
-                "三振": b.SO,
-                "OPS": f"{ops:.3f}".replace("0.", ".")
+                "本塁打(500打席換算)": round(b.HR * scale, 1),
+                "打点(500打席換算)": round(b.RBI * scale, 1),
+                "安打(500打席換算)": round(b.H * scale, 1),
+                "二塁打": round(b.double * scale, 1),
+                "三塁打": round(b.triple * scale, 1),
+                "四球": round(b.BB * scale, 1),
+                "三振": round(b.SO * scale, 1),
+                "OPS": f"{ops:.3f}".replace("0.", "."),
+                "実打席数": b.PA
             })
             
+        # --- 1シーズン（143投球回換算）の投球成績 ---
         pit_rows = []
         for p in test_pitchers:
             pt = p.pitching
-            outs = pt.outs
-            er = pt.ER
-            era = er * 27 / outs if outs > 0 else 0
-            whip = (pt.H + pt.BB) / (outs / 3) if outs > 0 else 0
+            ip = pt.outs / 3.0
+            scale = 143.0 / ip if ip > 0 else 1.0
+            era = pt.ER * 27 / pt.outs if pt.outs > 0 else 0
+            whip = (pt.H + pt.BB) / ip if ip > 0 else 0
+            k9 = pt.SO * 27 / pt.outs if pt.outs > 0 else 0
             
             pit_rows.append({
                 "球団": p.team,
                 "選手名": p.name,
                 "防御率": f"{era:.2f}",
-                "投球回": round(outs / 3, 1),
-                "被安打": pt.H,
-                "被本塁打": pt.HR,
-                "奪三振": pt.SO,
-                "与四球": pt.BB,
-                "失点": pt.R,
-                "自責点": pt.ER,
-                "WHIP": f"{whip:.2f}"
+                "WHIP": f"{whip:.2f}",
+                "奪三振率": f"{k9:.2f}",
+                "奪三振(143回換算)": round(pt.SO * scale, 1),
+                "被安打(143回換算)": round(pt.H * scale, 1),
+                "被本塁打(143回換算)": round(pt.HR * scale, 1),
+                "与四球(143回換算)": round(pt.BB * scale, 1),
+                "自責点(143回換算)": round(pt.ER * scale, 1),
+                "実投球回": round(ip, 1)
             })
             
-        st.subheader(f"テスト打撃成績（全員が {target_pa} 打席）")
-        st.dataframe(pd.DataFrame(bat_rows).sort_values("OPS", ascending=False), hide_index=True, use_container_width=True)
+        st.subheader("📊 1シーズン相当（500打席換算）の平均打撃成績")
+        st.dataframe(pd.DataFrame(bat_rows).sort_values("本塁打(500打席換算)", ascending=False), hide_index=True, use_container_width=True)
         
-        st.subheader(f"テスト投球成績（全員が {target_ip} 投球回）")
+        st.subheader("📊 1シーズン相当（143投球回換算）の平均投球成績")
         st.dataframe(pd.DataFrame(pit_rows).sort_values("防御率", ascending=True), hide_index=True, use_container_width=True)
 
+
 # ============================================================
-# 成績表示ヘルパー
+# ドラフト画面
 # ============================================================
-def batting_avg(p):
-    return p.batting.H / p.batting.AB if p.batting.AB else 0.0
+def draft_page(kind, all_players, count, skip_limit=None):
+    selected_key = "draft_fielders" if kind == "野手" else "draft_pitchers"
+    pool_key = "draft_fielder_pool" if kind == "野手" else "draft_pitcher_pool"
+    candidate_key = "draft_fielder_candidate" if kind == "野手" else "draft_pitcher_candidate"
+    skip_key = "fielder_skips" if kind == "野手" else "pitcher_skips"
 
-def obp(p):
-    b = p.batting
-    den = b.AB + b.BB + b.SF
-    return (b.H + b.BB) / den if den else 0.0
+    if selected_key not in st.session_state: st.session_state[selected_key] = []
+    if pool_key not in st.session_state: st.session_state[pool_key] = list(all_players)
+    if skip_key not in st.session_state: st.session_state[skip_key] = 0
 
-def slg(p):
-    return p.batting.TB / p.batting.AB if p.batting.AB else 0.0
+    selected = st.session_state[selected_key]
+    pool = st.session_state[pool_key]
 
-def ops(p):
-    return obp(p) + slg(p)
+    st.markdown("""
+    <style>
+    .draft-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 10px;}
+    .draft-count { font-size: 28px; font-weight: bold; color: #111;}
+    .draft-count-sub { font-size: 14px; color: #666; font-weight: normal; margin-left: 10px;}
+    .skip-badge { background-color: #ffebee; color: #c62828; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 14px; }
+    </style>
+    """, unsafe_allow_html=True)
 
-def era(p):
-    return p.pitching.ER * 27 / p.pitching.outs if p.pitching.outs else 0.0
+    rem_skips_html = ""
+    if skip_limit is not None:
+        rem_skips = skip_limit - st.session_state[skip_key]
+        rem_skips_html = f'<div class="skip-badge">見送り残り：{rem_skips}回</div>'
 
-def innings_str(outs):
-    return f"{outs // 3}.{outs % 3}"
+    st.markdown(f"""
+    <div style="font-size: 12px; font-weight: bold; color: #666;">{kind}を獲得</div>
+    <div class="draft-header">
+        <div class="draft-count">{len(selected)} / {count} <span class="draft-count-sub">あと{count - len(selected)}人</span></div>
+        {rem_skips_html}
+    </div>
+    """, unsafe_allow_html=True)
 
-def format_linescore(ls):
-    return " ".join("".join(ls[i:i+3]) for i in range(0, len(ls), 3))
+    if len(selected) >= count:
+        st.session_state.pop(candidate_key, None)
+        return True
 
-def fmt_pct(val):
-    s = f"{val:.3f}"
-    if s.startswith("0."):
-        return s[1:]
-    elif s.startswith("-0."):
-        return "-" + s[2:]
-    return s
+    selected_ids = {id(p) for p in selected}
+    pool = [p for p in pool if id(p) not in selected_ids]
+    st.session_state[pool_key] = pool
 
-def pos_icon(pos):
-    mapping = {
-        "C": ("捕", "#03A9F4", "捕手"),
-        "1B": ("一", "#F9A825", "一塁手"),
-        "2B": ("二", "#F9A825", "二塁手"),
-        "3B": ("三", "#F9A825", "三塁手"),
-        "SS": ("遊", "#F9A825", "遊撃手"),
-        "LF": ("左", "#388E3C", "左翼手"),
-        "CF": ("中", "#388E3C", "中堅手"),
-        "RF": ("右", "#388E3C", "右翼手"),
-        "DH": ("D", "#757575", "指名打者"),
-        "P": ("投", "#E53935", "投手"),
+    if not pool:
+        st.error(f"{kind}の候補選手がなくなりました。")
+        st.session_state.pop(candidate_key, None)
+        return False
+
+    candidate = st.session_state.get(candidate_key)
+    if candidate is None or candidate not in pool:
+        candidate = random.choice(pool)
+        st.session_state[candidate_key] = candidate
+
+    st.markdown("""
+    <style>
+    .card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; background-color: #fff; margin-top: 10px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);}
+    .p-tag { background-color: #00796b; color: white; padding: 4px 12px; border-radius: 15px; font-size: 12px; font-weight: bold; display: inline-block; margin-bottom: 8px;}
+    .p-name { font-size: 28px; font-weight: 900; margin: 0 0 5px 0; color: #111;}
+    .p-meta { font-size: 13px; color: #777; margin-bottom: 20px; }
+    .stats-box { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px;}
+    .stat-item { background-color: #f7f7f7; border: 1px solid #ececec; border-radius: 8px; padding: 10px 5px; text-align: center; min-width: 65px; flex: 1;}
+    .stat-label { font-size: 11px; color: #666; margin-bottom: 2px;}
+    .stat-rank { font-size: 26px; font-weight: 900; margin-bottom: 0px;}
+    .stat-val { font-size: 12px; color: #999; }
+    .pos-list { margin-top: 15px; border-top: 1px dashed #ddd; padding-top: 15px; font-size: 13px; color: #555; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;}
+    .pos-badge { background-color: #e8f5e9; color: #2e7d32; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 12px;}
+    </style>
+    """, unsafe_allow_html=True)
+
+    if kind == "野手":
+        if candidate.defense:
+            main_pos_str = "・".join([POSITION_JP.get(pos, pos) for pos in candidate.defense.keys()])
+        else:
+            main_pos_str = "不明"
+    else:
+        main_pos_str = "投手"
+    
+    card_html = f'<div class="card">'
+    card_html += f'<div class="p-tag">{main_pos_str}</div>'
+    card_html += f'<div class="p-name">{candidate.name}</div>'
+    card_html += f'<div class="p-meta">{candidate.team} 所属</div>'
+    
+    card_html += '<div class="stats-box">'
+    if kind == "野手":
+        max_def = max(candidate.defense.values()) if candidate.defense else 0
+        stats = [("ミート", candidate.contact), ("パワー", candidate.power), ("走力", candidate.speed), ("守備力", max_def)]
+    else:
+        stats = [("制球", candidate.control), ("スタミナ", candidate.stamina)]
+        
+    for label, val in stats:
+        rank_str, color = val_to_rank(val)
+        card_html += f'<div class="stat-item"><div class="stat-label">{label}</div><div class="stat-rank" style="color: {color};">{rank_str}</div><div class="stat-val">{int(val)}</div></div>'
+        
+    card_html += '</div>'
+
+    if kind == "野手":
+        card_html += '<div class="pos-list">守れる所：'
+        for pos, val in candidate.defense.items():
+            r_str, _ = val_to_rank(val)
+            card_html += f'<span class="pos-badge">{POSITION_JP.get(pos, pos)} {r_str}</span>'
+        card_html += '</div>'
+    else:
+        card_html += '<div class="pos-list">球種：'
+        for p_name, rank in candidate.pitches.items():
+            card_html += f'<span class="pos-badge">{p_name} {rank}</span>'
+        card_html += '</div>'
+        
+    card_html += '</div>'
+    st.markdown(card_html, unsafe_allow_html=True)
+
+    st.markdown("""
+    <style>
+    div[data-testid="column"]:nth-of-type(1) div.stButton > button {
+        background-color: #c62828 !important; color: white !important; height: 75px; font-size: 22px; font-weight: bold; border: none; border-radius: 8px; box-shadow: 0 4px 0 #8e0000; transition: 0.1s;
     }
-    return mapping.get(pos, ("?", "#999", "不明"))
+    div[data-testid="column"]:nth-of-type(1) div.stButton > button:active { box-shadow: 0 0 0 #8e0000; transform: translateY(4px); }
+    
+    div[data-testid="column"]:nth-of-type(2) div.stButton > button {
+        background-color: #2e7d32 !important; color: white !important; height: 75px; font-size: 22px; font-weight: bold; border: none; border-radius: 8px; box-shadow: 0 4px 0 #005005; transition: 0.1s;
+    }
+    div[data-testid="column"]:nth-of-type(2) div.stButton > button:active { box-shadow: 0 0 0 #005005; transform: translateY(4px); }
+    </style>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        skip_disabled = (skip_limit is not None and st.session_state[skip_key] >= skip_limit)
+        btn_label = f"見送る (残り{skip_limit - st.session_state[skip_key]}回)" if skip_limit else "見送る"
+        if st.button(btn_label, disabled=skip_disabled, use_container_width=True, key=f"skip_{kind}_{len(selected)}"):
+            st.session_state[pool_key] = [p for p in pool if p is not candidate]
+            st.session_state[skip_key] += 1
+            st.session_state.pop(candidate_key, None)
+            st.rerun()
+            
+    with c2:
+        if st.button("取る", use_container_width=True, key=f"take_{kind}_{len(selected)}"):
+            selected.append(candidate)
+            st.session_state[pool_key] = [p for p in pool if p is not candidate]
+            st.session_state.pop(candidate_key, None)
+            st.rerun()
+
+    st.markdown('<div style="font-size: 14px; font-weight: bold; color: #333; margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">獲得した選手</div>', unsafe_allow_html=True)
+    if selected:
+        sel_html = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">'
+        for p in selected:
+            if kind == "野手":
+                if p.defense:
+                    m_pos = "・".join([POSITION_JP.get(pos, pos) for pos in p.defense.keys()])
+                else:
+                    m_pos = "不明"
+            else:
+                m_pos = "投手"
+            sel_html += f'<div style="background-color: #f5f5f5; border: 1px solid #ddd; padding: 5px 12px; border-radius: 6px; font-size: 13px;"><b style="color:#555;">{m_pos}</b> {p.name}</div>'
+        sel_html += '</div>'
+        st.markdown(sel_html, unsafe_allow_html=True)
+    else:
+        st.markdown('<div style="font-size: 13px; color: #888;">まだ0人。ここに獲得した選手が並びます。</div>', unsafe_allow_html=True)
+
+    return False
+
+# ============================================================
+# オーダー画面
+# ============================================================
+def order_page(fielders, league):
+    st.header("④ オーダー設定")
+    st.info(f"選択リーグ：{league}")
+
+    initial_lineup = assign_initial_positions(fielders, dh=(league == "パ・リーグ"))
+    default_pos_map = {pos: p for p, pos in initial_lineup}
+
+    lineup = []
+    used = set()
+    st.subheader("守備位置")
+
+    for pos in POSITIONS:
+        available = [p for p in fielders if p.name not in used]
+        if not available:
+            st.error("野手の人数が不足しています。")
+            return None
+            
+        names = [p.name for p in available]
+        default_p = default_pos_map.get(pos)
+        idx = 0
+        if default_p and default_p.name in names:
+            idx = names.index(default_p.name)
+            
+        selected_name = st.selectbox(
+            f"{POSITION_JP[pos]} ({pos})",
+            names,
+            index=idx,
+            key=f"order_{pos}",
+        )
+        player = next(p for p in available if p.name == selected_name)
+        lineup.append((player, pos))
+        used.add(player.name)
+        st.caption(f"守備力 {pos}: {player.defense_at(pos):g}")
+
+    remaining = [p for p in fielders if p.name not in used]
+
+    if league == "パ・リーグ":
+        st.subheader("DH")
+        if not remaining:
+            st.error("DH候補がいません。")
+            return None
+            
+        names = [p.name for p in remaining]
+        default_p = default_pos_map.get("DH")
+        idx = 0
+        if default_p and default_p.name in names:
+            idx = names.index(default_p.name)
+            
+        dh_name = st.selectbox("DH", names, index=idx, key="order_DH")
+        dh = next(p for p in remaining if p.name == dh_name)
+        lineup.append((dh, "DH"))
+    else:
+        st.info("セ・リーグなので余った野手は代打要員になります。")
+
+    st.subheader("打順")
+    lineup_default = decide_batting_order(lineup)
+    names = [p.name for p, _ in lineup_default]
+    ordered = []
+
+    for i in range(len(lineup_default)):
+        remaining_names = [n for n in names if n not in [p.name for p, _ in ordered]]
+        default_name = lineup_default[i][0].name
+        idx = remaining_names.index(default_name) if default_name in remaining_names else 0
+        
+        selected_name = st.selectbox(f"{i + 1}番", remaining_names, index=idx, key=f"batting_order_{i}")
+        if selected_name is None:
+            continue
+        pair = next(x for x in lineup if x[0].name == selected_name)
+        ordered.append(pair)
+
+    bench = remaining[0] if league == "セ・リーグ" and remaining else None
+    if bench:
+        st.write(f"代打要員：**{bench.name}**")
+
+    if st.button("オーダー決定", type="primary"):
+        return {"lineup": ordered, "bench": bench}
+
+    return None
+
+# ============================================================
+# 投手起用画面
+# ============================================================
+def pitching_page(pitchers):
+    st.header("⑤ 投手起用設定")
+    names = [p.name for p in pitchers]
+
+    if len(names) < 15:
+        st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1人が必要です。")
+        return None
+
+    if "pitcher_roles" not in st.session_state:
+        st.session_state.pitcher_roles = decide_pitcher_roles(pitchers)
+
+    def update_role(p_name):
+        st.session_state.pitcher_roles[p_name] = st.session_state[f"sel_{p_name}"]
+
+    roles_list = list(st.session_state.pitcher_roles.values())
+    sp_count = roles_list.count("先発")
+    cl_count = roles_list.count("抑え")
+
+    if sp_count != 6:
+        st.markdown(f'<div style="background-color: #FBE9E7; padding: 15px; border-radius: 8px; color: #D32F2F; font-weight: bold; margin-bottom: 20px;">先発は6人ちょうどにしてください（いま{sp_count}人）</div>', unsafe_allow_html=True)
+    if cl_count != 1:
+        st.markdown(f'<div style="background-color: #FBE9E7; padding: 15px; border-radius: 8px; color: #D32F2F; font-weight: bold; margin-bottom: 20px;">抑えは1人ちょうどにしてください（いま{cl_count}人）</div>', unsafe_allow_html=True)
+
+    role_options = ["先発", "中継ぎエース", "僅差", "ビハインド", "抑え"]
+
+    for p in pitchers:
+        with st.container():
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                st.markdown(f'<div style="padding-top: 5px;"><span style="font-size: 18px; font-weight: 900; color: #111;">{p.name}</span><br><span style="font-size: 13px; color: #777;">{p.team}所属・制球 {int(p.control)}・スタミナ {int(p.stamina)}</span></div>', unsafe_allow_html=True)
+            with c2:
+                current_role = st.session_state.pitcher_roles.get(p.name, "僅差")
+                idx = role_options.index(current_role) if current_role in role_options else 2
+                st.selectbox("役割", role_options, index=idx, key=f"sel_{p.name}", label_visibility="collapsed", on_change=update_role, args=(p.name,))
+        st.markdown("<hr style='margin: 0 0 10px 0;'>", unsafe_allow_html=True)
+
+    if st.button("投手起用決定", type="primary", disabled=(sp_count != 6 or cl_count != 1)):
+        starters = [p for p in pitchers if st.session_state.pitcher_roles[p.name] == "先発"]
+        closer = [p for p in pitchers if st.session_state.pitcher_roles[p.name] == "抑え"][0]
+        bullpen = [p for p in pitchers if st.session_state.pitcher_roles[p.name] not in ("先発", "抑え")]
+        bullpen_roles = {id(p): st.session_state.pitcher_roles[p.name] for p in bullpen}
+        return {"starters": starters, "bullpen": bullpen, "closer": closer, "bullpen_roles": bullpen_roles}
+
+    return None
 
 # ============================================================
 # アプリケーション実行
@@ -1670,7 +1904,7 @@ else:
         st.subheader("参加球団")
         st.write(f"**セ・リーグ：** {', '.join(st.session_state.league_central)}")
         st.write(f"**パ・リーグ：** {', '.join(st.session_state.league_pacific)}")
-        
+
         if st.button("⚾ シーズン開始", type="primary", use_container_width=True):
             st.session_state.step = "season"
             st.rerun()
@@ -1680,7 +1914,6 @@ else:
         teams = st.session_state.teams
         my_league = st.session_state.my_league
         
-        # コンピュータ球団専用の下降補正
         for t_name, team_obj in teams.items():
             if t_name == "ソフトバンク":
                 for p in team_obj.fielders:
@@ -1939,7 +2172,7 @@ else:
             else:
                 role_str = staff["bullpen_roles"].get(id(p), "中継ぎ")
                 color = "#EC407A"
-                
+            
             era_str = f"{era(p):.2f}"
             
             html_pitch += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{i}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{role_str}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">防御率</span><span class="ms-val">{era_str}</span></div><div class="ms-item"><span class="ms-label">勝</span><span class="ms-val-small">{p.pitching.W}</span></div><div class="ms-item"><span class="ms-label">敗</span><span class="ms-val-small">{p.pitching.L}</span></div><div class="ms-item"><span class="ms-label">HP</span><span class="ms-val-small">{p.pitching.HLD}</span></div><div class="ms-item"><span class="ms-label">S</span><span class="ms-val-small">{p.pitching.SV}</span></div><div class="ms-item"><span class="ms-label">奪三振</span><span class="ms-val-small">{p.pitching.SO}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.pitching.G}</b></div><div class="ss-item">先発<b>{p.pitching.GS}</b></div><div class="ss-item">投球回<b>{innings_str(p.pitching.outs)}</b></div><div class="ss-item">四球<b>{p.pitching.BB}</b></div><div class="ss-item">自責点<b>{p.pitching.ER}</b></div></div></div>'
@@ -2009,7 +2242,7 @@ else:
             col4.metric("チーム失点", result["runs_against"])
             col5.metric("チーム防御率", f"{t_era:.2f}")
 
-        # 順位表（全チームの実成績から算出）
+        # 順位表
         with tab_standings:
             all_teams_data = result["all_teams_data"]
             
