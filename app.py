@@ -472,7 +472,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     if batter.power >= 80.0:
         walk_bonus += (batter.power - 80.0) * 0.0015
 
-    # パワー58以上へのHR確率ボーナス
+    # パワー58以上へのHR確率ボーナス (Aランク以上の傾斜をより緩やかに修正)
     hr_bonus = 0.0
     if batter.power >= 58.0:
         if batter.power < 80.0:
@@ -482,11 +482,15 @@ def at_bat_probabilities(batter, pitcher, game_outs):
             diff_to_80 = 80.0 - 58.0
             base_bonus_at_80 = (diff_to_80 * 0.0005) + ((diff_to_80 ** 2) * 0.00006)
             diff_over_80 = batter.power - 80.0
-            hr_bonus = base_bonus_at_80 + (diff_over_80 * 0.0015)
+            # 80以上の傾斜をかなり緩やか（0.0006）にする
+            hr_bonus = base_bonus_at_80 + (diff_over_80 * 0.0006)
 
-    single = BASE_PA["single"] + contact_diff * 0.0008 - (contact_penalty * 0.0010) - variety_debuff
+    # 単打における「ミート」の影響力を大幅アップ (0.0008 -> 0.0015)
+    single = BASE_PA["single"] + contact_diff * 0.0015 - (contact_penalty * 0.0010) - variety_debuff
     double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002) - (variety_debuff * 0.5)
-    triple = BASE_PA["triple"] + batter.speed * 0.000015
+    
+    # 三塁打における「走力」の影響力を大幅アップ (0.000015 -> 0.00006)
+    triple = BASE_PA["triple"] + batter.speed * 0.00006
     
     # hr_bonusをホームランに加算
     hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + hr_bonus - (variety_debuff * 0.5)
@@ -503,8 +507,6 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     single -= quality_delta * 0.00045
     double -= quality_delta * 0.00025
     hr -= quality_delta * 0.00030
-    
-    # 【変更】球種ランク（球質）による奪三振力の影響をさらに強化（約1.6倍）
     so += quality_delta * 0.0045
 
     if fatigue < 1.0:
