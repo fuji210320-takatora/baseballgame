@@ -58,10 +58,10 @@ RANK_WEIGHT = {
 }
 
 BASE_PA = {
-    "single": 0.170,
-    "double": 0.068,
-    "triple": 0.010,
-    "hr": 0.025,
+    "single": 0.160,
+    "double": 0.048,
+    "triple": 0.004,
+    "hr": 0.018,
     "walk": 0.082,
     "so": 0.220,
 }
@@ -446,7 +446,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 低能力のペナルティはそのまま残す
+    # 低能力へのペナルティ
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
@@ -459,22 +459,35 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         diff = 60.0 - effective_power
         power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
-    # -----------------------------------
-    # 高能力者への+補正（power_bonus, walk_bonus）をすべて削除
-    # -----------------------------------
-
+    # 投手の球種数による補正
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
+
+    # 強打者ほど警戒され、四球が出やすくなるボーナス
+    walk_bonus = 0.0
+    if batter.power > 50.0:
+        walk_bonus += (batter.power - 50.0) * 0.0012
+    if batter.contact > 50.0:
+        walk_bonus += (batter.contact - 50.0) * 0.0006
+    if batter.power >= 80.0:
+        walk_bonus += (batter.power - 80.0) * 0.0015
+
+    # 【新規】パワー58以上の打者に限定した、HR確率の傾斜（二次関数的）ボーナス
+    hr_bonus = 0.0
+    if batter.power >= 58.0:
+        diff_58 = batter.power - 58.0
+        # パワーが上がるにつれてグイッと上昇するカーブ
+        hr_bonus = (diff_58 * 0.0004) + ((diff_58 ** 2) * 0.00005)
 
     single = BASE_PA["single"] + contact_diff * 0.0008 - (contact_penalty * 0.0010) - variety_debuff
     double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002) - (variety_debuff * 0.5)
     triple = BASE_PA["triple"] + batter.speed * 0.000015
     
-    # power_bonusの加算を削除
-    hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) - (variety_debuff * 0.5)
+    # hr_bonusをホームランに加算
+    hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + hr_bonus - (variety_debuff * 0.5)
     
-    # walk_bonusの加算を削除
-    walk = BASE_PA["walk"] - control_diff * 0.0012
+    # walk_bonusを四球確率に加算
+    walk = BASE_PA["walk"] - control_diff * 0.0012 + walk_bonus
     so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
 
     quality_delta = quality - 60.0
@@ -1204,6 +1217,7 @@ def render_test_simulator(fielders_base, pitchers_base):
         test_fielders = [copy.deepcopy(p) for p in fielders_base if p.team not in exclude_teams]
         test_pitchers = [copy.deepcopy(p) for p in pitchers_base if p.team not in exclude_teams]
         
+        # 相手コンピュータ球団の構築
         comp_fielders = copy.deepcopy(fielders_base)
         comp_pitchers = copy.deepcopy(pitchers_base)
         for p in comp_fielders + comp_pitchers:
@@ -1240,6 +1254,7 @@ def render_test_simulator(fielders_base, pitchers_base):
         status_text = st.empty()
         total_targets = len(test_fielders) + len(test_pitchers)
         
+        # フラットな基準守備陣
         dummy_def = Player(name="Dummy", team="Dummy")
         dummy_def.defense = {pos: 50.0 for pos in POSITIONS}
         def_dict = {pos: dummy_def for pos in POSITIONS}
@@ -1247,6 +1262,7 @@ def render_test_simulator(fielders_base, pitchers_base):
         b_idx = 0
         p_idx = 0
         
+        # 全員が目標に達するまで対戦を回す
         while len(completed_fielders) < len(test_fielders) or len(completed_pitchers) < len(test_pitchers):
             opp_name = random.choice(available_opp_names)
             opp_team = opp_teams[opp_name]
@@ -1255,6 +1271,7 @@ def render_test_simulator(fielders_base, pitchers_base):
             opp_pitcher = random.choice(opp_staff["starters"] + opp_staff["bullpen"])
             opp_def = {pos: p for p, pos in opp_obj["lineup"] if pos != "DH"}
             
+            # --- マイチームの攻撃（1イニング） ---
             if len(completed_fielders) < len(test_fielders):
                 inning_outs = 0
                 bases = [None, None, None]
@@ -1319,6 +1336,7 @@ def render_test_simulator(fielders_base, pitchers_base):
                         f_pool = [p for p in test_fielders if p.name not in completed_fielders]
                         if not f_pool: break
 
+            # --- マイチームの守備（1イニング） ---
             if len(completed_pitchers) < len(test_pitchers):
                 pitcher = p_pool[p_idx % len(p_pool)]
                 p_idx += 1
@@ -1396,6 +1414,7 @@ def render_test_simulator(fielders_base, pitchers_base):
 
         status_text.success("シミュレーション完了！1シーズン相当に換算したデータを算出しました。")
         
+        # --- 1シーズン（500打席換算）の打撃成績 ---
         bat_rows = []
         for p in test_fielders:
             b = p.batting
@@ -1420,6 +1439,7 @@ def render_test_simulator(fielders_base, pitchers_base):
                 "実打席数": b.PA
             })
             
+        # --- 1シーズン（143投球回換算）の投球成績 ---
         pit_rows = []
         for p in test_pitchers:
             pt = p.pitching
@@ -1448,6 +1468,7 @@ def render_test_simulator(fielders_base, pitchers_base):
         
         st.subheader("📊 1シーズン相当（143投球回換算）の平均投球成績")
         st.dataframe(pd.DataFrame(pit_rows).sort_values("防御率", ascending=True), hide_index=True, use_container_width=True)
+
 
 # ============================================================
 # ドラフト画面
@@ -1771,7 +1792,7 @@ except Exception as e:
     )
     st.stop()
 
-st.sidebar.success(f"野手 {len(fielders_all)}人 / 投手 {len(pitchers_all)}人")
+st.sidebar.success(f"野手 {len(fielders_all)}人 /投手 {len(pitchers_all)}人")
 
 # ============================================================
 # モード分岐：能力値テスト（シミュレーター）
