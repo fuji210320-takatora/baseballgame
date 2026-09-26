@@ -368,6 +368,11 @@ def best_pitching_staff(team):
         "bullpen_roles": bullpen_roles,
     }
 
+def build_opponent_team(team, dh):
+    lineup = best_lineup_for_team(team, dh=dh)
+    staff = best_pitching_staff(team)
+    return {"team": team, "lineup": lineup, "staff": staff}
+
 # ============================================================
 # 全試合スケジュールの生成
 # ============================================================
@@ -769,6 +774,39 @@ class PitchingState:
 # ============================================================
 # 1試合
 # ============================================================
+def attempt_steal(bases, offense_lineup, defense, game_state=None):
+    catcher = defense.get("C")
+    if catcher is None: return bases
+    candidates = []
+    if bases[0] is not None and bases[1] is None:
+        candidates.append((0, 1, 0.10, 0.34))
+    if bases[1] is not None and bases[2] is None:
+        candidates.append((1, 2, 0.045, 0.22))
+    if not candidates: return bases
+
+    from_base, to_base, base_attempt, speed_factor = candidates[0]
+    runner = bases[from_base]
+    attempt_prob = base_attempt + runner.speed / 500.0
+    attempt_prob = clamp(attempt_prob, 0.03, 0.34 if from_base == 0 else 0.18)
+
+    if random.random() >= attempt_prob:
+        return bases
+
+    catcher_def = catcher.defense_at("C")
+    success_prob = (0.10 + (runner.speed - 30.0) * 0.007 - (catcher_def - 30.0) * 0.004)
+    success_prob = clamp(success_prob, 0.03, 0.88)
+
+    if random.random() < success_prob:
+        bases[from_base] = None
+        bases[to_base] = runner
+        runner.batting.SB += 1
+    else:
+        bases[from_base] = None
+        runner.batting.CS += 1
+        if game_state is not None:
+            game_state["outs"] += 1
+    return bases
+
 def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league, home_team=False, inning=1, top_bottom="表", game_state=None):
     outs = 0
     bases = [None, None, None]
@@ -1616,7 +1654,6 @@ elif st.session_state.step == "ready":
     })
     st.dataframe(pd.DataFrame(pitching_rows), hide_index=True, use_container_width=True)
 
-    # 全12球団でのスケジュール作成準備
     if league == "セ・リーグ":
         same = st.session_state.central.copy()
         inter = st.session_state.pacific.copy()
