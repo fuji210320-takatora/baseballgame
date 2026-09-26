@@ -57,14 +57,13 @@ RANK_WEIGHT = {
     "G": 0.35,
 }
 
-# 【得点力アップ調整】ヒットと四球の基礎確率を微増させ、出塁率を現実の平均(.315前後)に近づける
 BASE_PA = {
-    "single": 0.160,   # 0.155 -> 0.160
-    "double": 0.048,   # 0.045 -> 0.048
+    "single": 0.160,
+    "double": 0.048,
     "triple": 0.004,
     "hr": 0.018,
-    "walk": 0.082,     # 0.075 -> 0.082
-    "so": 0.220,       # 0.230 -> 0.220
+    "walk": 0.082,
+    "so": 0.220,
 }
 
 SCHEDULE_SAME = 25
@@ -447,7 +446,6 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 【調整】低能力のペナルティをマイルドにして、下位打線の極端なブラックホール化を防ぐ
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
@@ -470,6 +468,16 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     if 60.0 <= batter.contact <= 79.0:
         power_bonus += (batter.contact - 60.0) * 0.0003
 
+    # 【追加】強打者ほど警戒され、四球が出やすくなるボーナス
+    walk_bonus = 0.0
+    if batter.power > 50.0:
+        walk_bonus += (batter.power - 50.0) * 0.0012
+    if batter.contact > 50.0:
+        walk_bonus += (batter.contact - 50.0) * 0.0006
+    # パワー80以上の超強打者は勝負避け（敬遠気味）ボーナスを追加
+    if batter.power >= 80.0:
+        walk_bonus += (batter.power - 80.0) * 0.0015
+
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
 
@@ -477,11 +485,12 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002) - (variety_debuff * 0.5)
     triple = BASE_PA["triple"] + batter.speed * 0.000015
     hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + power_bonus - (variety_debuff * 0.5)
-    walk = BASE_PA["walk"] - control_diff * 0.0012
+    
+    # 四球確率に walk_bonus を加算
+    walk = BASE_PA["walk"] - control_diff * 0.0012 + walk_bonus
     so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
 
-    # 【調整】投手の基準球質を65.0（Cランク相当）に設定（60.0だと投高になりすぎるため）
-    quality_delta = quality - 65.0
+    quality_delta = quality - 60.0
     single -= quality_delta * 0.00045
     double -= quality_delta * 0.00025
     hr -= quality_delta * 0.00030
@@ -497,7 +506,9 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     double = clamp(double, 0.002, 0.12)
     triple = clamp(triple, 0.001, 0.03)
     hr = clamp(hr, 0.001, 0.12)
-    walk = clamp(walk, 0.015, 0.15)
+    
+    # 【変更】四球の上限を引き上げ（強打者がちゃんと四球を取れるように）
+    walk = clamp(walk, 0.015, 0.25)
     so = clamp(so, 0.05, 0.45)
 
     used = single + double + triple + hr + walk + so
@@ -584,7 +595,6 @@ def advance_on_hit(bases, batter, result):
             runs += 1
             scoring.append(bases[2])
         if bases[1] is not None:
-            # 【調整】二塁ランナーの生還率アップ
             run_prob = 0.55 + bases[1].speed / 300.0
             if random.random() < clamp(run_prob, 0.55, 0.90):
                 runs += 1
@@ -592,8 +602,7 @@ def advance_on_hit(bases, batter, result):
             else:
                 new_bases[2] = bases[1]
         if bases[0] is not None:
-            # 【調整】一塁ランナーの生還率アップ
-            run_prob = 0.40 + bases[0].speed / 250.0
+            run_prob = 0.30 + bases[0].speed / 250.0
             if random.random() < clamp(run_prob, 0.30, 0.82):
                 runs += 1
                 scoring.append(bases[0])
@@ -606,7 +615,6 @@ def advance_on_hit(bases, batter, result):
         runs += 1
         scoring.append(bases[2])
     if bases[1] is not None:
-        # 【調整】二塁ランナーの生還率アップ（単打時）
         run_prob = 0.55 + bases[1].speed / 250.0
         if random.random() < clamp(run_prob, 0.55, 0.95):
             runs += 1
@@ -614,7 +622,6 @@ def advance_on_hit(bases, batter, result):
         else:
             new_bases[2] = bases[1]
     if bases[0] is not None:
-        # 【追加】単打で一塁ランナーが三塁に進む処理
         run3_prob = 0.25 + bases[0].speed / 300.0
         if random.random() < clamp(run3_prob, 0.10, 0.70):
             new_bases[2] = bases[0]
@@ -949,7 +956,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                     runner1 = bases[0]
                     adv_prob = 0.0
                     if pos in ["1B", "2B", "3B", "SS"]:
-                        # 【調整】バントがない分の進塁打確率アップ
                         adv_prob = 0.35 + runner1.speed * 0.002
                     if random.random() < clamp(adv_prob, 0.01, 0.40):
                         bases[1] = runner1
