@@ -446,6 +446,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
+    # 低能力のペナルティはそのまま残す
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
@@ -458,25 +459,9 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         diff = 60.0 - effective_power
         power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
-    power_bonus = 0.0
-    if batter.power > 60.0:
-        diff = batter.power - 60.0
-        power_bonus = (diff ** 2) * 0.000075
-
-    if 60.0 <= batter.power <= 79.0:
-        power_bonus += (batter.power - 60.0) * 0.0006
-    if 60.0 <= batter.contact <= 79.0:
-        power_bonus += (batter.contact - 60.0) * 0.0003
-
-    # 【追加】強打者ほど警戒され、四球が出やすくなるボーナス
-    walk_bonus = 0.0
-    if batter.power > 50.0:
-        walk_bonus += (batter.power - 50.0) * 0.0012
-    if batter.contact > 50.0:
-        walk_bonus += (batter.contact - 50.0) * 0.0006
-    # パワー80以上の超強打者は勝負避け（敬遠気味）ボーナスを追加
-    if batter.power >= 80.0:
-        walk_bonus += (batter.power - 80.0) * 0.0015
+    # -----------------------------------
+    # 高能力者への+補正（power_bonus, walk_bonus）をすべて削除
+    # -----------------------------------
 
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
@@ -484,10 +469,12 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     single = BASE_PA["single"] + contact_diff * 0.0008 - (contact_penalty * 0.0010) - variety_debuff
     double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002) - (variety_debuff * 0.5)
     triple = BASE_PA["triple"] + batter.speed * 0.000015
-    hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + power_bonus - (variety_debuff * 0.5)
     
-    # 四球確率に walk_bonus を加算
-    walk = BASE_PA["walk"] - control_diff * 0.0012 + walk_bonus
+    # power_bonusの加算を削除
+    hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) - (variety_debuff * 0.5)
+    
+    # walk_bonusの加算を削除
+    walk = BASE_PA["walk"] - control_diff * 0.0012
     so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
 
     quality_delta = quality - 60.0
@@ -506,8 +493,6 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     double = clamp(double, 0.002, 0.12)
     triple = clamp(triple, 0.001, 0.03)
     hr = clamp(hr, 0.001, 0.12)
-    
-    # 【変更】四球の上限を引き上げ（強打者がちゃんと四球を取れるように）
     walk = clamp(walk, 0.015, 0.25)
     so = clamp(so, 0.05, 0.45)
 
