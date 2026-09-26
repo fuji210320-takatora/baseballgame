@@ -1207,7 +1207,7 @@ def val_to_rank(val):
     elif val >= 50: return "D", "#FFD600" 
     elif val >= 40: return "E", "#4CAF50" 
     elif val >= 20: return "F", "#2196F3" 
-    else: return "G", "#9E9E9E"           
+    else: return "G", "#9E9E9E"            
 
 # ============================================================
 # テストシミュレーター用関数 (実戦他球団対決・1シーズン換算)
@@ -2110,6 +2110,13 @@ else:
                 my_ls = result["my_linescore"] if is_home else result["op_linescore"]
                 op_ls = result["op_linescore"] if is_home else result["my_linescore"]
                 
+                # ▼▼▼ 修正部分：マイチームの本塁打のみを抽出 ▼▼▼
+                my_player_names = [p.name for p, _ in st.session_state.my_lineup]
+                if st.session_state.my_bench:
+                    my_player_names.append(st.session_state.my_bench.name)
+                
+                my_hrs = [hr for hr in result.get("hrs", []) if any(f" {name} " in hr for name in my_player_names)]
+                
                 game_log.append({
                     "試合": all_teams_data["マイチーム"]["games_played"],
                     "対戦相手": op_name,
@@ -2119,8 +2126,9 @@ else:
                     "勝投手": win_p.name if win_p else "-",
                     "敗投手": los_p.name if los_p else "-",
                     "S投手": sv_p.name if sv_p else "-",
-                    "本塁打": "、".join(result.get("hrs", []))
+                    "本塁打": "、".join(my_hrs)
                 })
+                # ▲▲▲ 修正部分ここまで ▲▲▲
                 
             if idx % 20 == 0 or idx == len(full_schedule):
                 progress.progress(idx / len(full_schedule))
