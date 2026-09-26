@@ -1121,6 +1121,65 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         return my_score, op_score, {"result": "D", "winning_pitcher": None, "losing_pitcher": None, "save_pitcher": None, "my_linescore": my_linescore, "op_linescore": op_linescore, "hrs": hr_events}
 
 # ============================================================
+# 成績表示ヘルパー
+# ============================================================
+def batting_avg(p):
+    return p.batting.H / p.batting.AB if p.batting.AB else 0.0
+
+def obp(p):
+    b = p.batting
+    den = b.AB + b.BB + b.SF
+    return (b.H + b.BB) / den if den else 0.0
+
+def slg(p):
+    return p.batting.TB / p.batting.AB if p.batting.AB else 0.0
+
+def ops(p):
+    return obp(p) + slg(p)
+
+def era(p):
+    return p.pitching.ER * 27 / p.pitching.outs if p.pitching.outs else 0.0
+
+def innings_str(outs):
+    return f"{outs // 3}.{outs % 3}"
+
+def format_linescore(ls):
+    return " ".join("".join(ls[i:i+3]) for i in range(0, len(ls), 3))
+
+def fmt_pct(val):
+    s = f"{val:.3f}"
+    if s.startswith("0."):
+        return s[1:]
+    elif s.startswith("-0."):
+        return "-" + s[2:]
+    return s
+
+def pos_icon(pos):
+    mapping = {
+        "C": ("捕", "#03A9F4", "捕手"),
+        "1B": ("一", "#F9A825", "一塁手"),
+        "2B": ("二", "#F9A825", "二塁手"),
+        "3B": ("三", "#F9A825", "三塁手"),
+        "SS": ("遊", "#F9A825", "遊撃手"),
+        "LF": ("左", "#388E3C", "左翼手"),
+        "CF": ("中", "#388E3C", "中堅手"),
+        "RF": ("右", "#388E3C", "右翼手"),
+        "DH": ("D", "#757575", "指名打者"),
+        "P": ("投", "#E53935", "投手"),
+    }
+    return mapping.get(pos, ("?", "#999", "不明"))
+
+def val_to_rank(val):
+    if val >= 90: return "S", "#D4AF37"  
+    elif val >= 80: return "A", "#E91E63" 
+    elif val >= 70: return "B", "#F44336" 
+    elif val >= 60: return "C", "#FF9800" 
+    elif val >= 50: return "D", "#FFD600" 
+    elif val >= 40: return "E", "#4CAF50" 
+    elif val >= 20: return "F", "#2196F3" 
+    else: return "G", "#9E9E9E"           
+
+# ============================================================
 # テストシミュレーター用関数 (実戦他球団対決・1シーズン換算)
 # ============================================================
 def render_test_simulator(fielders_base, pitchers_base):
