@@ -36,13 +36,11 @@ POSITION_JP = {
 
 RANK_VALUE = {
     "S": 100.0,
-    "A": 80.0,
+    "A": 85.0,
     "B": 70.0,
-    "C": 60.0,
-    "D": 50.0,
-    "E": 40.0,
-    "F": 20.0,
-    "G": 1.0,
+    "C": 55.0,
+    "D": 40.0,
+    "E": 25.0,
 }
 
 RANK_WEIGHT = {
@@ -60,8 +58,8 @@ BASE_PA = {
     "double": 0.045,
     "triple": 0.004,
     "hr": 0.018,
-    "walk": 0.110,
-    "so": 0.210,
+    "walk": 0.075,
+    "so": 0.230,
 }
 
 SCHEDULE_SAME = 25
@@ -224,8 +222,120 @@ def load_pitchers(source):
     return players
 
 # ============================================================
-# チーム生成
+# 初期配置・チーム生成ロジック
 # ============================================================
+def assign_initial_positions(fielders, dh=True):
+    remaining = list(fielders)
+    lineup = []
+    assigned_positions = set()
+    assigned_players = set()
+    
+    # 1. 一人しか守れる選手がいないポジションを優先して埋める
+    for pos in POSITIONS:
+        capable = [p for p in remaining if p.defense_at(pos) > 0]
+        if len(capable) == 1:
+            p = capable[0]
+            if p not in assigned_players:
+                lineup.append((p, pos))
+                assigned_positions.add(pos)
+                assigned_players.add(p)
+                remaining.remove(p)
+                
+    # 2. 残りは「ミパ走」の合計値順に埋める
+    def total_score(p):
+        return p.contact + p.power + p.speed
+
+    remaining.sort(key=total_score, reverse=True)
+    unassigned_pos = [pos for pos in POSITIONS if pos not in assigned_positions]
+    
+    for p in list(remaining):
+        if not unassigned_pos:
+            break
+        capable_pos = [pos for pos in unassigned_pos if p.defense_at(pos) > 0]
+        if capable_pos:
+            best_pos = max(capable_pos, key=lambda pos: p.defense_at(pos))
+            lineup.append((p, best_pos))
+            unassigned_pos.remove(best_pos)
+            remaining.remove(p)
+            
+    # それでも空いているポジションがあれば、適当に上から埋める
+    for pos in list(unassigned_pos):
+        if remaining:
+            p = remaining.pop(0)
+            lineup.append((p, pos))
+            unassigned_pos.remove(pos)
+            
+    if dh and remaining:
+        dh_player = max(remaining, key=total_score)
+        lineup.append((dh_player, "DH"))
+        remaining.remove(dh_player)
+        
+    return lineup
+
+def decide_batting_order(lineup_pairs):
+    pool = list(lineup_pairs)
+    order = [None] * len(pool)
+    
+    def assign_to_order(idx, score_func):
+        if len(pool) > 0 and idx < len(order):
+            p = max(pool, key=lambda x: score_func(x[0]))
+            order[idx] = p
+            pool.remove(p)
+
+    # 【新規追加】理想の打順ロジックによる割り当て
+    # 4番：パワー×2 + ミート×1.2
+    assign_to_order(3, lambda p: p.power * 2 + p.contact * 1.2)
+    # 1番：ミート×1.7 + パワー×0.4 + 走力×2
+    assign_to_order(0, lambda p: p.contact * 1.7 + p.power * 0.4 + p.speed * 2)
+    # 2番：ミート×1.3 + パワー×1.1 + 走力
+    assign_to_order(1, lambda p: p.contact * 1.3 + p.power * 1.1 + p.speed)
+    # 5番：パワー×2 + ミート
+    assign_to_order(4, lambda p: p.power * 2 + p.contact)
+    # 3番：ミート + パワー×2
+    assign_to_order(2, lambda p: p.contact + p.power * 2)
+
+    # 残り（6, 7, 8, 9番）はミート+パワー順で配置
+    pool.sort(key=lambda x: x[0].contact + x[0].power, reverse=True)
+    
+    empty_indices = [i for i, v in enumerate(order) if v is None]
+    for p in pool:
+        if empty_indices:
+            idx = empty_indices.pop(0)
+            order[idx] = p
+            
+    return [x for x in order if x is not None]
+
+def count_pitches_of_rank(pitcher, ranks):
+    return sum(1 for r in pitcher.pitches.values() if r in ranks)
+
+def relief_sort_key(pitcher):
+    # 【新規追加】抑え・中継ぎエースの決定ロジック
+    # ①球種SとAの合計数、②球種Bの数、③制球力、④ランダム値 でソート
+    a_count = count_pitches_of_rank(pitcher, ["S", "A"])
+    b_count = count_pitches_of_rank(pitcher, ["B"])
+    return (a_count, b_count, pitcher.control, random.random())
+
+def decide_pitcher_roles(pitchers):
+    sorted_by_stamina = sorted(pitchers, key=lambda p: p.stamina, reverse=True)
+    starters = sorted_by_stamina[:6]
+    remaining = sorted_by_stamina[6:]
+    
+    remaining.sort(key=relief_sort_key, reverse=True)
+    
+    roles = {}
+    for p in starters:
+        roles[p.name] = "先発"
+        
+    role_slots = ["抑え", "中継ぎエース", "中継ぎエース", "僅差", "僅差", "ビハインド", "ビハインド", "ビハインド", "ビハインド"]
+    
+    for i, p in enumerate(remaining):
+        if i < len(role_slots):
+            roles[p.name] = role_slots[i]
+        else:
+            roles[p.name] = "ビハインド"
+            
+    return roles
+
 def build_teams(fielders, pitchers):
     teams = {}
     for p in fielders:
@@ -244,54 +354,22 @@ def build_teams(fielders, pitchers):
         for name, data in teams.items()
     }
 
-def player_offense_score(p):
-    return p.contact * 0.45 + p.power * 0.40 + p.speed * 0.15
-
-def player_pitching_score(p):
-    if not p.pitches:
-        return 0.0
-    pitch_values = [RANK_VALUE.get(rank, 55) for rank in p.pitches.values()]
-    avg_pitch = sum(pitch_values) / len(pitch_values)
-    variety_bonus = min(len(p.pitches), 6) * 1.5
-    return p.control * 0.35 + p.stamina * 0.20 + avg_pitch * 0.45 + variety_bonus
-
 def best_lineup_for_team(team, dh=True):
-    remaining = list(team.fielders)
-    lineup = []
-    for pos in POSITIONS:
-        candidates = sorted(
-            remaining,
-            key=lambda p: (p.defense_at(pos), player_offense_score(p)),
-            reverse=True,
-        )
-        if candidates:
-            chosen = candidates[0]
-            lineup.append((chosen, pos))
-            remaining.remove(chosen)
-    if dh and remaining:
-        dh_player = max(remaining, key=player_offense_score)
-        lineup.append((dh_player, "DH"))
-
-    lineup.sort(key=lambda x: player_offense_score(x[0]), reverse=True)
+    lineup = assign_initial_positions(team.fielders, dh=dh)
+    lineup = decide_batting_order(lineup)
     if len(lineup) > 9:
         lineup = lineup[:9]
     return lineup
 
 def best_pitching_staff(team):
-    pitchers = sorted(team.pitchers, key=player_pitching_score, reverse=True)
-    starters = pitchers[:6]
-    bullpen = pitchers[6:14]
-    closer = pitchers[14] if len(pitchers) > 14 else (pitchers[-1] if pitchers else None)
-
-    bullpen_roles = {}
-    for i, p in enumerate(bullpen):
-        if i < 2:
-            bullpen_roles[id(p)] = "中継ぎエース"
-        elif i < 5:
-            bullpen_roles[id(p)] = "僅差"
-        else:
-            bullpen_roles[id(p)] = "ビハインド"
-
+    roles = decide_pitcher_roles(team.pitchers)
+    starters = [p for p in team.pitchers if roles.get(p.name) == "先発"]
+    closer_list = [p for p in team.pitchers if roles.get(p.name) == "抑え"]
+    closer = closer_list[0] if closer_list else None
+    bullpen = [p for p in team.pitchers if roles.get(p.name) not in ("先発", "抑え")]
+    
+    bullpen_roles = {id(p): roles.get(p.name) for p in bullpen}
+    
     return {
         "starters": starters,
         "bullpen": bullpen,
@@ -344,7 +422,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     power_diff = batter.power - quality
     control_diff = pitcher.control - 50.0
 
-    # 能力値59〜40までのデバフ（さらに緩やかな二次曲線）
+    # 能力値59〜40までのデバフ
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
@@ -363,13 +441,17 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         diff = batter.power - 60.0
         power_bonus = (diff ** 2) * 0.000075
 
+    # 【新規追加】多球種による投手側ボーナス（球種が多いほど的を絞らせないデバフ）
+    pitch_variety = len(pitcher.pitches)
+    variety_debuff = max(0, pitch_variety - 2) * 0.0015
+
     # ペナルティとボーナスを確率に反映
-    single = BASE_PA["single"] + contact_diff * 0.0008 - (contact_penalty * 0.0010)
-    double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002)
+    single = BASE_PA["single"] + contact_diff * 0.0008 - (contact_penalty * 0.0010) - variety_debuff
+    double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002) - (variety_debuff * 0.5)
     triple = BASE_PA["triple"] + batter.speed * 0.000015
-    hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + power_bonus
+    hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + power_bonus - (variety_debuff * 0.5)
     walk = BASE_PA["walk"] - control_diff * 0.0012
-    so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008)
+    so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
 
     # 投手の能力（球質）による制圧力
     quality_delta = quality - 55.0
@@ -611,10 +693,8 @@ class PitchingState:
         if not available:
             return None
             
-        # 中継ぎの登板数を均等にするため、試合数が少ない順に並び替え
         available.sort(key=lambda x: x.pitching.G)
 
-        # 【修正】抑えの登板条件を「9回以降」に変更
         if inning >= 9 and score_diff > 0 and self.closer is not None and self.closer not in self.used_bullpen:
             return self.closer
             
@@ -658,7 +738,6 @@ class PitchingState:
                 old.pitching.HLD += 1
                 self.game_holds.append(old)
 
-        # 【修正】「抑え」もちゃんと使用済みリストに入れるように変更
         if new not in self.used_bullpen and (new in self.bullpen or new is self.closer):
             self.used_bullpen.append(new)
 
@@ -734,7 +813,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
         probs, pitch_name = at_bat_probabilities(batter, pitcher, pitcher.pitching.outs)
         result = choose_result(probs)
 
-        # 1打席あたりの球数を加算
         if result in ("so", "walk"):
             pa_pitches = random.randint(4, 8)
         else:
@@ -778,13 +856,34 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
             outs += 1
             pitcher.pitching.outs += 1
         else:
-            batter.batting.AB += 1
             outcome, pos, defender = resolve_outcome(result, defense)
             if outcome == "field_out":
                 outs += 1
                 pitcher.pitching.outs += 1
                 if defender is not None: defender.fielding.A += 1
+                
+                # 【新規追加】犠牲フライの判定と処理
+                is_sf = False
+                if outs <= 2 and bases[2] is not None and pos in ["LF", "CF", "RF"]:
+                    runner = bases[2]
+                    arm = defender.defense_at(pos) if defender else 30.0
+                    # 走力と外野手の肩からタッチアップ成功率を計算
+                    sf_prob = 0.50 + (runner.speed - arm) * 0.005
+                    sf_prob = clamp(sf_prob, 0.10, 0.95)
+                    
+                    if random.random() < sf_prob:
+                        runs += 1
+                        batter.batting.RBI += 1
+                        runner.batting.R += 1
+                        batter.batting.SF += 1
+                        bases[2] = None
+                        is_sf = True
+                
+                if not is_sf:
+                    batter.batting.AB += 1 # 犠飛にならなかったフライやゴロは打数を加算
             else:
+                # エラー出塁
+                batter.batting.AB += 1
                 if defender is not None: pass
                 if bases[0] is None:
                     bases[0] = batter
@@ -968,18 +1067,17 @@ def fmt_pct(val):
     return s
 
 def pos_icon(pos):
-    # 【色変更】ポジションごとのカラーアイコン
     mapping = {
-        "C": ("捕", "#03A9F4", "捕手"),     # 水色
-        "1B": ("一", "#F9A825", "一塁手"),   # 黄色
-        "2B": ("二", "#F9A825", "二塁手"),   # 黄色
-        "3B": ("三", "#F9A825", "三塁手"),   # 黄色
-        "SS": ("遊", "#F9A825", "遊撃手"),   # 黄色
-        "LF": ("左", "#388E3C", "左翼手"),   # 緑色
-        "CF": ("中", "#388E3C", "中堅手"),   # 緑色
-        "RF": ("右", "#388E3C", "右翼手"),   # 緑色
-        "DH": ("D", "#757575", "指名打者"),  # グレー
-        "P": ("投", "#E53935", "投手"),      # 投手（デフォルト）
+        "C": ("捕", "#03A9F4", "捕手"),
+        "1B": ("一", "#F9A825", "一塁手"),
+        "2B": ("二", "#F9A825", "二塁手"),
+        "3B": ("三", "#F9A825", "三塁手"),
+        "SS": ("遊", "#F9A825", "遊撃手"),
+        "LF": ("左", "#388E3C", "左翼手"),
+        "CF": ("中", "#388E3C", "中堅手"),
+        "RF": ("右", "#388E3C", "右翼手"),
+        "DH": ("D", "#757575", "指名打者"),
+        "P": ("投", "#E53935", "投手"),
     }
     return mapping.get(pos, ("?", "#999", "不明"))
 
@@ -997,9 +1095,6 @@ def create_schedule(my_league, same_teams, inter_teams):
     random.shuffle(schedule)
     return schedule[:143]
 
-# ============================================================
-# 能力値をランクと色に変換する関数
-# ============================================================
 def val_to_rank(val):
     if val >= 90: return "S", "#D4AF37"  
     elif val >= 80: return "A", "#E91E63" 
@@ -1180,6 +1275,10 @@ def order_page(fielders, league):
     st.header("④ オーダー設定")
     st.info(f"選択リーグ：{league}")
 
+    # 【新規追加】自動配置ロジックで初期の守備位置と打順を決定
+    initial_lineup = assign_initial_positions(fielders, dh=(league == "パ・リーグ"))
+    default_pos_map = {pos: p for p, pos in initial_lineup}
+
     lineup = []
     used = set()
     st.subheader("守備位置")
@@ -1189,16 +1288,17 @@ def order_page(fielders, league):
         if not available:
             st.error("野手の人数が不足しています。")
             return None
-        available = sorted(
-            available,
-            key=lambda p: (p.defense_at(pos), player_offense_score(p)),
-            reverse=True,
-        )
+            
         names = [p.name for p in available]
+        default_p = default_pos_map.get(pos)
+        idx = 0
+        if default_p and default_p.name in names:
+            idx = names.index(default_p.name)
+            
         selected_name = st.selectbox(
             f"{POSITION_JP[pos]} ({pos})",
             names,
-            index=0,
+            index=idx,
             key=f"order_{pos}",
         )
         player = next(p for p in available if p.name == selected_name)
@@ -1213,23 +1313,34 @@ def order_page(fielders, league):
         if not remaining:
             st.error("DH候補がいません。")
             return None
-        dh_name = st.selectbox("DH", [p.name for p in remaining], key="order_DH")
+            
+        names = [p.name for p in remaining]
+        default_p = default_pos_map.get("DH")
+        idx = 0
+        if default_p and default_p.name in names:
+            idx = names.index(default_p.name)
+            
+        dh_name = st.selectbox("DH", names, index=idx, key="order_DH")
         dh = next(p for p in remaining if p.name == dh_name)
         lineup.append((dh, "DH"))
     else:
         st.info("セ・リーグなので余った野手は代打要員になります。")
 
     st.subheader("打順")
-    lineup_default = sorted(lineup, key=lambda x: player_offense_score(x[0]), reverse=True)
+    # 【新規追加】理想の打順ロジックによるデフォルト打順取得
+    lineup_default = decide_batting_order(lineup)
     names = [p.name for p, _ in lineup_default]
     ordered = []
 
     for i in range(len(lineup_default)):
         remaining_names = [n for n in names if n not in [p.name for p, _ in ordered]]
-        selected_name = st.selectbox(f"{i + 1}番", remaining_names, key=f"batting_order_{i}")
+        default_name = lineup_default[i][0].name
+        idx = remaining_names.index(default_name) if default_name in remaining_names else 0
+        
+        selected_name = st.selectbox(f"{i + 1}番", remaining_names, index=idx, key=f"batting_order_{i}")
         if selected_name is None:
             continue
-        pair = next(x for x in lineup_default if x[0].name == selected_name)
+        pair = next(x for x in lineup if x[0].name == selected_name)
         ordered.append(pair)
 
     bench = remaining[0] if league == "セ・リーグ" and remaining else None
@@ -1252,14 +1363,9 @@ def pitching_page(pitchers):
         st.error("投手が15人未満です。先発6人＋中継ぎ8人＋抑え1人が必要です。")
         return None
 
+    # 【新規追加】投手起用の自動初期設定
     if "pitcher_roles" not in st.session_state:
-        stamina_sorted = sorted(pitchers, key=lambda p: p.stamina, reverse=True)
-        roles = {}
-        for i, p in enumerate(stamina_sorted):
-            if i < 6: roles[p.name] = "先発"
-            elif i < 14: roles[p.name] = "僅差"
-            else: roles[p.name] = "抑え"
-        st.session_state.pitcher_roles = roles
+        st.session_state.pitcher_roles = decide_pitcher_roles(pitchers)
 
     def update_role(p_name):
         st.session_state.pitcher_roles[p_name] = st.session_state[f"sel_{p_name}"]
@@ -1273,7 +1379,6 @@ def pitching_page(pitchers):
     if cl_count != 1:
         st.markdown(f'<div style="background-color: #FBE9E7; padding: 15px; border-radius: 8px; color: #D32F2F; font-weight: bold; margin-bottom: 20px;">抑えは1人ちょうどにしてください（いま{cl_count}人）</div>', unsafe_allow_html=True)
 
-    # 【修正】ここを「中継ぎエース」に直しました
     role_options = ["先発", "中継ぎエース", "僅差", "ビハインド", "抑え"]
 
     for p in pitchers:
@@ -1295,11 +1400,6 @@ def pitching_page(pitchers):
         return {"starters": starters, "bullpen": bullpen, "closer": closer, "bullpen_roles": bullpen_roles}
 
     return None
-
-def build_opponent_team(team, dh):
-    lineup = best_lineup_for_team(team, dh=dh)
-    staff = best_pitching_staff(team)
-    return {"team": team, "lineup": lineup, "staff": staff}
 
 # ============================================================
 # アプリケーション実行
@@ -1683,11 +1783,11 @@ elif st.session_state.step == "result":
         if pos == "DH" or pos == "代打": 
             uzr_str = "－"
         
-        html_bat += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{order_str}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{jp_pos}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">打率</span><span class="ms-val">{avg_str}</span></div><div class="ms-item"><span class="ms-label">本塁打</span><span class="ms-val-small">{p.batting.HR}</span></div><div class="ms-item"><span class="ms-label">打点</span><span class="ms-val-small">{p.batting.RBI}</span></div><div class="ms-item"><span class="ms-label">盗塁</span><span class="ms-val-small">{p.batting.SB}</span></div><div class="ms-item"><span class="ms-label">OPS</span><span class="ms-val">{ops_str}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.batting.G}</b></div><div class="ss-item">打席<b>{p.batting.PA}</b></div><div class="ss-item">打数<b>{p.batting.AB}</b></div><div class="ss-item">安打<b>{p.batting.H}</b></div><div class="ss-item">UZR<b>{uzr_str}</b></div></div></div>'
+        html_bat += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{order_str}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{jp_pos}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">打率</span><span class="ms-val">{avg_str}</span></div><div class="ms-item"><span class="ms-label">本塁打</span><span class="ms-val-small">{p.batting.HR}</span></div><div class="ms-item"><span class="ms-label">打点</span><span class="ms-val-small">{p.batting.RBI}</span></div><div class="ms-item"><span class="ms-label">盗塁</span><span class="ms-val-small">{p.batting.SB}</span></div><div class="ms-item"><span class="ms-label">OPS</span><span class="ms-val">{ops_str}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.batting.G}</b></div><div class="ss-item">打席<b>{p.batting.PA}</b></div><div class="ss-item">打数<b>{p.batting.AB}</b></div><div class="ss-item">安打<b>{p.batting.H}</b></div><div class="ss-item">犠飛<b>{p.batting.SF}</b></div><div class="ss-item">UZR<b>{uzr_str}</b></div></div></div>'
 
     html_bat += '</div>'
 
-    # 投球成績 HTML生成（役割別のカラー反映）
+    # 投球成績 HTML生成
     html_pitch = '<div class="stats-container">'
     staff = st.session_state.my_staff
     pitchers_list = staff["starters"] + staff["bullpen"] + ([staff["closer"]] if staff["closer"] else [])
@@ -1697,13 +1797,13 @@ elif st.session_state.step == "result":
         
         if p in staff["starters"]:
             role_str = "先発"
-            color = "#E53935"  # 赤色
+            color = "#E53935"
         elif p == staff["closer"]:
             role_str = "抑え"
-            color = "#EC407A"  # ピンク色
+            color = "#EC407A"
         else:
             role_str = staff["bullpen_roles"].get(id(p), "中継ぎ")
-            color = "#EC407A"  # ピンク色
+            color = "#EC407A"
             
         era_str = f"{era(p):.2f}"
         
@@ -1711,7 +1811,6 @@ elif st.session_state.step == "result":
 
     html_pitch += '</div>'
 
-    # タブ内にHTMLを展開
     with tab_bat:
         st.markdown(html_bat, unsafe_allow_html=True)
         st.markdown("""
