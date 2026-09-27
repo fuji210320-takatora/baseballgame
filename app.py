@@ -576,11 +576,11 @@ def resolve_bip(bb_type, batter, defense):
         if bb_type == "GB":
             hit_type = random.choices(["single", "double"], weights=[0.95, 0.05])[0]
         elif bb_type == "FB":
-            hit_type = random.choices(["single", "double", "triple"], weights=[0.50, 0.37, 0.13])[0]
+            hit_type = random.choices(["single", "double", "triple"], weights=[0.60, 0.32, 0.08])[0]
             if hit_type == "triple" and random.random() > (batter.speed / 100.0):
                 hit_type = "double"
         else: 
-            hit_type = random.choices(["single", "double"], weights=[0.65, 0.35])[0]
+            hit_type = random.choices(["single", "double"], weights=[0.75, 0.25])[0]
         return hit_type, pos, defender
     else:
         if defender:
