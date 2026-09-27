@@ -597,21 +597,30 @@ def resolve_bip(bb_type, batter, defense):
         return "error", pos, defender
 
     if r < hit_prob + error_prob:
-        # パワーによる二塁打への僅かな傾斜
-        power_double_bonus = (batter.power - 50.0) * 0.0015
+        # NEW: パワー50を基準にした二塁打への傾斜
+        if batter.power >= 50.0:
+            # 50以上は僅かなプラス傾斜
+            power_double_bonus = (batter.power - 50.0) * 0.0015
+        else:
+            # 50未満は下方向へ強いマイナス傾斜（長打にならずポテンヒットの単打になる）
+            diff = 50.0 - batter.power
+            power_double_bonus = -(diff * 0.004 + (diff ** 2) * 0.0002)
         
         if bb_type == "GB":
             d_weight = max(0.01, 0.05 + power_double_bonus * 0.2)
             hit_type = random.choices(["single", "double"], weights=[1.0 - d_weight, d_weight])[0]
         elif bb_type == "FB":
-            d_weight = max(0.30, 0.70 + power_double_bonus)
-            s_weight = max(0.05, 0.20 - power_double_bonus * 0.8) # 二塁打が増えた分単打を減らす
-            t_weight = 1.0 - d_weight - s_weight
+            # 二塁打の確率を変動させ、連動して三塁打も少し増減させる
+            d_weight = max(0.15, 0.70 + power_double_bonus)
+            t_weight = max(0.02, 0.10 + power_double_bonus * 0.2) 
+            # 減った長打の確率分はすべて単打（ポテンヒット）に変換
+            s_weight = max(0.05, 1.0 - d_weight - t_weight) 
+            
             hit_type = random.choices(["single", "double", "triple"], weights=[s_weight, d_weight, t_weight])[0]
             if hit_type == "triple" and random.random() > (batter.speed / 100.0):
                 hit_type = "double"
-        else: 
-            d_weight = max(0.15, 0.35 + power_double_bonus)
+        else: # LD (ライナー)
+            d_weight = max(0.10, 0.35 + power_double_bonus)
             hit_type = random.choices(["single", "double"], weights=[1.0 - d_weight, d_weight])[0]
         return hit_type, pos, defender
     else:
