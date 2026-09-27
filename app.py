@@ -539,7 +539,7 @@ def resolve_bip(bb_type, batter, defense):
         positions = ["1B", "2B", "3B", "SS"]
         weights = [1.0, 1.2, 1.0, 1.2]
         pos = random.choices(positions, weights=weights, k=1)[0]
-        base_hit_prob = 0.21 + (batter.speed * 0.0006)
+        base_hit_prob = 0.23 + (batter.speed * 0.0006)
         
     elif bb_type == "FB":
         positions = ["LF", "CF", "RF", "2B", "SS"] 
