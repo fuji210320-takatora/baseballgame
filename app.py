@@ -600,7 +600,7 @@ def resolve_bip(bb_type, batter, defense):
         # NEW: パワー50を基準にした二塁打への傾斜
         if batter.power >= 50.0:
             # 50以上は僅かなプラス傾斜
-            power_double_bonus = (batter.power - 50.0) * 0.0015
+            power_double_bonus = (batter.power - 50.0) * 0.0007
         else:
             # 50未満は下方向へ強いマイナス傾斜（長打にならずポテンヒットの単打になる）
             diff = 50.0 - batter.power
