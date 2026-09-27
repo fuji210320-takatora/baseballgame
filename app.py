@@ -58,9 +58,9 @@ RANK_WEIGHT = {
 }
 
 BASE_PA = {
-    "hr": 0.018,
-    "walk": 0.082,
-    "so": 0.220,
+    "hr": 0.025,   # 本塁打率 約2.5%
+    "walk": 0.090, # 四死球率 約9.0%
+    "so": 0.200,   # 三振率 約20.0%
 }
 
 SCHEDULE_SAME = 25
@@ -408,7 +408,7 @@ def reset_stats(players):
         p.fielding = FielderStats()
 
 # ============================================================
-# NEW: 打席の3段階処理（DIPSモデル）
+# 打席の3段階処理（DIPSモデル）
 # ============================================================
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
@@ -437,7 +437,6 @@ def fatigue_factor(pitcher, game_outs):
 def determine_tto(batter, pitcher, game_outs):
     """
     Step 1: 守備に依存しないスイング結果（Three True Outcomes）を判定
-    戻り値: 結果("walk", "so", "hr", "bip") と 投げた球種
     """
     pitch_name = choose_pitch(pitcher)
     quality = pitch_quality(pitcher, pitch_name)
@@ -498,7 +497,6 @@ def determine_tto(batter, pitcher, game_outs):
     walk = clamp(walk, 0.015, 0.25)
     so = clamp(so, 0.05, 0.45)
 
-    # 上記以外はすべてインプレー（バットに当たって前に飛んだ）
     bip = max(0.01, 1.0 - (hr + walk + so))
     total = hr + walk + so + bip
 
@@ -512,11 +510,10 @@ def determine_batted_ball(batter):
     """
     Step 2: インプレーになった打球の性質を決定（ゴロ、フライ、ライナー）
     """
-    gb_prob = 0.45
-    fb_prob = 0.35
-    ld_prob = 0.20
+    gb_prob = 0.45 
+    fb_prob = 0.37 
+    ld_prob = 0.18 
 
-    # パワーが高いとフライが上がりやすく、ミートが高いとライナーが出やすい
     fb_prob += (batter.power - 50.0) * 0.002
     ld_prob += (batter.contact - 50.0) * 0.002
 
@@ -542,27 +539,27 @@ def resolve_bip(bb_type, batter, defense):
         positions = ["1B", "2B", "3B", "SS"]
         weights = [1.0, 1.2, 1.0, 1.2]
         pos = random.choices(positions, weights=weights, k=1)[0]
-        base_hit_prob = 0.20 + (batter.speed * 0.0006) # 足が速いと内野安打増
+        base_hit_prob = 0.21 + (batter.speed * 0.0006)
+        
     elif bb_type == "FB":
-        positions = ["LF", "CF", "RF", "2B", "SS"] # 内野へのポップフライ含む
+        positions = ["LF", "CF", "RF", "2B", "SS"] 
         weights = [1.0, 1.2, 1.0, 0.1, 0.1]
         pos = random.choices(positions, weights=weights, k=1)[0]
-        base_hit_prob = 0.18 # フライは基本追いつかれるが、落ちれば長打
-    else: # LD (ライナー)
+        base_hit_prob = 0.11 
+        
+    else: 
         positions = ["LF", "CF", "RF", "1B", "2B", "3B", "SS"]
         weights = [1.0, 1.0, 1.0, 0.4, 0.4, 0.4, 0.4]
         pos = random.choices(positions, weights=weights, k=1)[0]
-        base_hit_prob = 0.68 # ライナーは高確率でヒット
+        base_hit_prob = 0.68 
 
     defender = defense.get(pos)
     def_ability = defender.defense_at(pos) if defender else 30.0
 
-    # 守備力が高いほど、ヒット確率を削ってアウトにできる
     def_modifier = (def_ability - 50.0) * 0.0015
     hit_prob = base_hit_prob - def_modifier
     hit_prob = clamp(hit_prob, 0.05, 0.95)
 
-    # エラー判定 (守備力が低いほどファンブル等が発生)
     base_error_prob = 0.0028
     ability_factor = clamp((70.0 - def_ability) / 70.0, -0.35, 0.90)
     error_prob = base_error_prob * (1.0 + ability_factor)
@@ -575,20 +572,17 @@ def resolve_bip(bb_type, batter, defense):
             defender.fielding.UZR -= 0.5 + max(0.0, (50.0 - def_ability) / 100.0)
         return "error", pos, defender
 
-    # ヒットかアウトの判定
     if r < hit_prob + error_prob:
-        # ヒットの場合、打球性質に応じて単打・二塁打・三塁打を割り振る
         if bb_type == "GB":
             hit_type = random.choices(["single", "double"], weights=[0.95, 0.05])[0]
         elif bb_type == "FB":
             hit_type = random.choices(["single", "double", "triple"], weights=[0.20, 0.70, 0.10])[0]
             if hit_type == "triple" and random.random() > (batter.speed / 100.0):
-                hit_type = "double" # 足が遅いと三塁打が二塁打に
-        else: # LD
+                hit_type = "double"
+        else: 
             hit_type = random.choices(["single", "double"], weights=[0.65, 0.35])[0]
         return hit_type, pos, defender
     else:
-        # アウトの場合、守備側のUZRと刺殺をプラス
         if defender:
             defender.fielding.PO += 1
             defender.fielding.UZR += (def_ability - 50.0) / 1200.0
@@ -833,7 +827,6 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
     if catcher is None: return bases
     candidates = []
     
-    # NEW: 盗塁企図率を現実に即して抑制
     if bases[0] is not None and bases[1] is None:
         candidates.append((0, 1, 0.03, 0.15))
     if bases[1] is not None and bases[2] is None:
@@ -850,7 +843,6 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
     if random.random() >= attempt_prob:
         return bases
 
-    # NEW: 成功率のベースをプロ水準(70%)に引き上げ
     catcher_def = catcher.defense_at("C")
     success_prob = 0.70 + (runner.speed - 50.0) * 0.008 - (catcher_def - 50.0) * 0.006
     success_prob = clamp(success_prob, 0.30, 0.95)
@@ -887,7 +879,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
         batter.batting.PA += 1
         pitcher.pitching.BF += 1
 
-        # NEW: ディシジョンツリーモデルの呼び出し
         tto_result, pitch_name = determine_tto(batter, pitcher, pitcher.pitching.outs)
 
         if tto_result in ("so", "walk"):
@@ -896,7 +887,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
             pa_pitches = random.randint(1, 6)
         pitcher.game_pitches = getattr(pitcher, 'game_pitches', 0) + pa_pitches
 
-        # TTO以外ならインプレーとして野手と打球の勝負
         if tto_result == "bip":
             bb_type = determine_batted_ball(batter)
             result, pos, defender = resolve_bip(bb_type, batter, defense)
@@ -904,7 +894,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
             result = tto_result
             pos, defender = None, None
 
-        # 結果の処理
         if result in ("single", "double", "triple", "hr"):
             batter.batting.AB += 1
             batter.batting.H += 1
@@ -948,16 +937,15 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
             outs += 1
             pitcher.pitching.outs += 1
             
-        else: # "field_out" または "error"
+        else: 
             if result == "field_out":
                 outs += 1
                 pitcher.pitching.outs += 1
-                if defender is not None: defender.fielding.A += 1 # 補殺
+                if defender is not None: defender.fielding.A += 1 
                 
                 is_sf = False
                 if outs <= 2 and bases[2] is not None:
                     runner = bases[2]
-                    # 外野へのフライ/ライナーアウトなら犠飛判定
                     if pos in ["LF", "CF", "RF"]:
                         arm = defender.defense_at(pos) if defender else 30.0
                         sf_prob = 0.50 + (runner.speed - arm) * 0.005
@@ -969,7 +957,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                             batter.batting.SF += 1
                             bases[2] = None
                             is_sf = True
-                    # 内野ゴロ等のアウトなら進塁打判定
                     elif pos in ["1B", "2B", "3B", "SS"]:
                         base_prob = 0.45 if pos in ["2B", "SS"] else 0.25
                         run_prob = base_prob + (runner.speed - 40.0) * 0.004
@@ -983,7 +970,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                 if not is_sf:
                     batter.batting.AB += 1
 
-                # 2塁走者の3塁進塁
                 if outs <= 2 and bases[2] is None and bases[1] is not None:
                     runner2 = bases[1]
                     adv_prob = 0.0
@@ -1001,7 +987,6 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                         bases[2] = runner2
                         bases[1] = None
 
-                # 1塁走者の2塁進塁
                 if outs <= 2 and bases[1] is None and bases[0] is not None:
                     runner1 = bases[0]
                     adv_prob = 0.0
@@ -1010,7 +995,7 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                     if random.random() < clamp(adv_prob, 0.01, 0.40):
                         bases[1] = runner1
                         bases[0] = None
-            else: # "error" の場合 (アウトにならず進塁)
+            else: 
                 batter.batting.AB += 1
                 if bases[0] is None:
                     bases[0] = batter
@@ -1118,7 +1103,7 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         hr_events.extend(hrs_my)
         
         if op_pitcher:
-            op_pitching.current_start_outs = (op_pitcher.pitching.outs - op_pitching.appearance_start_outs.get(id(op_pitcher), op_pitcher.pitching.outs))
+            op_pitching.current_start_outs = (op_pitcher.pitching.outs - op_pitcher.appearance_start_outs.get(id(op_pitcher), op_pitcher.pitching.outs))
             op_pitching.pitcher_runs[id(op_pitcher)] += r_my
             op_pitching.pitcher_earned[id(op_pitcher)] += r_my
             op_pitcher.pitching.R += r_my
@@ -1329,7 +1314,6 @@ def render_test_simulator(fielders_base, pitchers_base):
                     rec_b = (batter.name not in completed_fielders)
                     if rec_b: batter.batting.PA += 1
                     
-                    # NEW: テスト用シミュにも3段階モデルを適用
                     tto_result, _ = determine_tto(batter, opp_pitcher, 0)
                     
                     if tto_result == "bip":
@@ -1375,7 +1359,7 @@ def render_test_simulator(fielders_base, pitchers_base):
                                         if rec_b: batter.batting.RBI += 1
                                         bases[2] = None
                             if not is_sf and rec_b: batter.batting.AB += 1
-                        else: # error
+                        else: 
                             if rec_b: batter.batting.AB += 1
                             if bases[0] is None: bases[0] = batter
                             elif bases[1] is None: bases[1] = bases[0]; bases[0] = batter
@@ -1454,7 +1438,7 @@ def render_test_simulator(fielders_base, pitchers_base):
                                         pitcher.pitching.R += 1
                                         pitcher.pitching.ER += 1
                                     bases[2] = None
-                        else: # error
+                        else: 
                             if bases[0] is None: bases[0] = opp_batter
                             elif bases[1] is None: bases[1] = bases[0]; bases[0] = opp_batter
                             elif bases[2] is None: bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = opp_batter
