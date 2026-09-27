@@ -557,7 +557,7 @@ def resolve_bip(bb_type, batter, defense):
     Step 3: 打球方向と野手の守備力から、最終的な安打/凡退/エラーを判定
     """
     # NEW: ミート力が高いほど、打球が野手の間を抜ける確率が直接アップするボーナス
-    contact_bonus = (batter.contact - 50.0) * 0.0015
+    contact_bonus = (batter.contact - 40.0) * 0.0010
 
     if bb_type == "GB":
         positions = ["1B", "2B", "3B", "SS"]
