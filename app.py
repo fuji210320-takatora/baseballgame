@@ -472,10 +472,14 @@ def determine_tto(batter, pitcher, game_outs):
         contact_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
     power_penalty = 0.0
+    hr_penalty = 0.0
     if batter.power < 60.0:
-        effective_power = max(40.0, batter.power)
-        diff = 60.0 - effective_power
-        power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
+        diff = 60.0 - batter.power
+        # 三振等への影響は以前と同等に留める
+        effective_diff = min(20.0, diff)
+        power_penalty = (effective_diff * 0.4) + ((effective_diff ** 2) * 0.01)
+        # NEW: 本塁打への影響は下に行くほど指数関数的にマイナス傾斜を強くする
+        hr_penalty = (diff * 0.0005) + ((diff ** 2) * 0.00008)
 
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
@@ -846,7 +850,6 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
     if catcher is None: return bases
     candidates = []
     
-    # 盗塁のベース企図率と上限（1塁と2塁で分ける）
     if bases[0] is not None and bases[1] is None:
         candidates.append((0, 1, 0.02, 0.25))
     if bases[1] is not None and bases[2] is None:
@@ -858,26 +861,43 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
     runner = bases[from_base]
     speed = runner.speed
     
-    # 走力に応じた非線形な盗塁ボーナスの算出
-    # C(60)未満: かなり緩やか（ほぼフラット）
-    if speed < 60.0:
-        speed_bonus = speed * 0.1
-    # C(60〜69): 少し傾斜をつける
-    elif speed < 70.0:
-        speed_bonus = 6.0 + (speed - 60.0) * 0.5
-    # B(70〜79): さらに少し傾斜を強くする
-    elif speed < 80.0:
-        speed_bonus = 11.0 + (speed - 70.0) * 1.2
-    # A(80以上): 再び強い傾斜をつける（韋駄天ボーナス）
-    else:
-        speed_bonus = 23.0 + (speed - 80.0) * 2.5
+    # NEW: 走力に応じた非線形な盗塁ボーナス（下方向への傾斜を追加）
+    if speed < 40.0: # F, G: 走らない、走れない（強いマイナス傾斜）
+        speed_bonus = (speed - 50.0) * 1.5
+    elif speed < 50.0: # E: ほぼ走らない（マイナス傾斜）
+        speed_bonus = (speed - 50.0) * 0.8
+    elif speed < 60.0: # D: 緩やかなマイナス
+        speed_bonus = (speed - 50.0) * 0.3
+    elif speed < 70.0: # C: 少しプラス傾斜
+        speed_bonus = 3.0 + (speed - 60.0) * 0.5
+    elif speed < 80.0: # B: 強いプラス傾斜
+        speed_bonus = 8.0 + (speed - 70.0) * 1.2
+    else: # A, S: 韋駄天ボーナス
+        speed_bonus = 20.0 + (speed - 80.0) * 2.5
 
     # 企図率（スタートを切る確率）への反映
     attempt_prob = base_attempt + (speed_bonus * 0.003)
-    attempt_prob = clamp(attempt_prob, 0.01, max_attempt)
+    # 最低確率を0.1%まで下げて「非力な走者は絶対に走らない」状態を作る
+    attempt_prob = clamp(attempt_prob, 0.001, max_attempt)
 
     if random.random() >= attempt_prob:
         return bases
+
+    catcher_def = catcher.defense_at("C")
+    success_prob = 0.65 + (speed_bonus * 0.008) - (catcher_def - 50.0) * 0.006
+    success_prob = clamp(success_prob, 0.05, 0.95)
+
+    if random.random() < success_prob:
+        bases[from_base] = None
+        bases[to_base] = runner
+        runner.batting.SB += 1
+    else:
+        bases[from_base] = None
+        runner.batting.CS += 1
+        if game_state is not None:
+            game_state["outs"] += 1
+            
+    return bases
 
     # 成功率への反映（平均的な捕手に対する成功率をベースに計算）
     catcher_def = catcher.defense_at("C")
