@@ -499,7 +499,7 @@ def determine_tto(batter, pitcher, game_outs):
     hr_bonus = 0.0
     if batter.power >= 60.0:
         diff = batter.power - 60.0
-        hr_bonus = (diff * 0.00025) + ((diff ** 2) * 0.0006) # 以前より数値を小さく
+        hr_bonus = (diff * 0.00025) + ((diff ** 2) * 0.0002) # 以前より数値を小さく
 
     # power_diffの基本影響(0.0004)も0.00025に下げて傾斜をフラット気味に
     hr = BASE_PA["hr"] + power_diff * 0.00025 - hr_penalty + hr_bonus - (variety_debuff * 0.5)
