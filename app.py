@@ -473,13 +473,16 @@ def determine_tto(batter, pitcher, game_outs):
 
     power_penalty = 0.0
     hr_penalty = 0.0
-    if batter.power < 60.0:
+    
+    # 49以下の下方向・本塁打への傾斜を強める
+    if batter.power < 50.0:
+        diff = 50.0 - batter.power
+        power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
+        hr_penalty = (diff * 0.001) + ((diff ** 2) * 0.0002) # 本塁打への強いマイナス傾斜
+    elif batter.power < 60.0:
         diff = 60.0 - batter.power
-        # 三振等への影響は以前と同等に留める
-        effective_diff = min(20.0, diff)
-        power_penalty = (effective_diff * 0.4) + ((effective_diff ** 2) * 0.01)
-        # NEW: 本塁打への影響は下に行くほど指数関数的にマイナス傾斜を強くする
-        hr_penalty = (diff * 0.0005) + ((diff ** 2) * 0.00008)
+        power_penalty = diff * 0.3
+        hr_penalty = diff * 0.0002
 
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
@@ -492,20 +495,16 @@ def determine_tto(batter, pitcher, game_outs):
     if batter.power >= 80.0:
         walk_bonus += (batter.power - 80.0) * 0.0015
 
+    # 全体的な本塁打への傾斜を緩やかにする
     hr_bonus = 0.0
-    if batter.power >= 58.0:
-        if batter.power < 80.0:
-            diff_58 = batter.power - 58.0
-            hr_bonus = (diff_58 * 0.0005) + ((diff_58 ** 2) * 0.00006)
-        else:
-            diff_to_80 = 80.0 - 58.0
-            base_bonus_at_80 = (diff_to_80 * 0.0005) + ((diff_to_80 ** 2) * 0.00006)
-            diff_over_80 = batter.power - 80.0
-            hr_bonus = base_bonus_at_80 + (diff_over_80 * 0.0006)
+    if batter.power >= 60.0:
+        diff = batter.power - 60.0
+        hr_bonus = (diff * 0.00025) + ((diff ** 2) * 0.00001) # 以前より数値を小さく
 
-    hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + hr_bonus - (variety_debuff * 0.5)
+    # power_diffの基本影響(0.0004)も0.00025に下げて傾斜をフラット気味に
+    hr = BASE_PA["hr"] + power_diff * 0.00025 - hr_penalty + hr_bonus - (variety_debuff * 0.5)
     walk = BASE_PA["walk"] - control_diff * 0.0012 + walk_bonus
-    so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
+    so = BASE_PA["so"] - contact_diff * 0.0025 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
 
     quality_delta = quality - 60.0
     hr -= quality_delta * 0.00030
@@ -538,7 +537,7 @@ def determine_batted_ball(batter):
     ld_prob = 0.18 
 
     fb_prob += (batter.power - 50.0) * 0.002
-    ld_prob += (batter.contact - 50.0) * 0.002
+    ld_prob += (batter.contact - 50.0) * 0.005
 
     gb_prob = max(0.10, gb_prob)
     fb_prob = max(0.10, fb_prob)
@@ -553,28 +552,30 @@ def determine_batted_ball(batter):
     if r < gb_prob: return "GB"
     elif r < gb_prob + fb_prob: return "FB"
     else: return "LD"
-
 def resolve_bip(bb_type, batter, defense):
     """
     Step 3: 打球方向と野手の守備力から、最終的な安打/凡退/エラーを判定
     """
+    # NEW: ミート力が高いほど、打球が野手の間を抜ける確率が直接アップするボーナス
+    contact_bonus = (batter.contact - 50.0) * 0.0015
+
     if bb_type == "GB":
         positions = ["1B", "2B", "3B", "SS"]
         weights = [1.0, 1.2, 1.0, 1.2]
         pos = random.choices(positions, weights=weights, k=1)[0]
-        base_hit_prob = 0.23 + (batter.speed * 0.0006)
+        base_hit_prob = 0.21 + (batter.speed * 0.0006) + contact_bonus
         
     elif bb_type == "FB":
         positions = ["LF", "CF", "RF", "2B", "SS"] 
         weights = [1.0, 1.2, 1.0, 0.1, 0.1]
         pos = random.choices(positions, weights=weights, k=1)[0]
-        base_hit_prob = 0.11 
+        base_hit_prob = 0.11 + (contact_bonus * 0.5)
         
     else: 
         positions = ["LF", "CF", "RF", "1B", "2B", "3B", "SS"]
         weights = [1.0, 1.0, 1.0, 0.4, 0.4, 0.4, 0.4]
         pos = random.choices(positions, weights=weights, k=1)[0]
-        base_hit_prob = 0.68 
+        base_hit_prob = 0.68 + contact_bonus
 
     defender = defense.get(pos)
     def_ability = defender.defense_at(pos) if defender else 30.0
@@ -596,14 +597,22 @@ def resolve_bip(bb_type, batter, defense):
         return "error", pos, defender
 
     if r < hit_prob + error_prob:
+        # パワーによる二塁打への僅かな傾斜
+        power_double_bonus = (batter.power - 50.0) * 0.0015
+        
         if bb_type == "GB":
-            hit_type = random.choices(["single", "double"], weights=[0.95, 0.05])[0]
+            d_weight = max(0.01, 0.05 + power_double_bonus * 0.2)
+            hit_type = random.choices(["single", "double"], weights=[1.0 - d_weight, d_weight])[0]
         elif bb_type == "FB":
-            hit_type = random.choices(["single", "double", "triple"], weights=[0.60, 0.26, 0.14])[0]
+            d_weight = max(0.30, 0.70 + power_double_bonus)
+            s_weight = max(0.05, 0.20 - power_double_bonus * 0.8) # 二塁打が増えた分単打を減らす
+            t_weight = 1.0 - d_weight - s_weight
+            hit_type = random.choices(["single", "double", "triple"], weights=[s_weight, d_weight, t_weight])[0]
             if hit_type == "triple" and random.random() > (batter.speed / 100.0):
                 hit_type = "double"
         else: 
-            hit_type = random.choices(["single", "double"], weights=[0.75, 0.25])[0]
+            d_weight = max(0.15, 0.35 + power_double_bonus)
+            hit_type = random.choices(["single", "double"], weights=[1.0 - d_weight, d_weight])[0]
         return hit_type, pos, defender
     else:
         if defender:
