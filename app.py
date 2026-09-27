@@ -846,25 +846,43 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
     if catcher is None: return bases
     candidates = []
     
+    # 盗塁のベース企図率と上限（1塁と2塁で分ける）
     if bases[0] is not None and bases[1] is None:
-        candidates.append((0, 1, 0.03, 0.15))
+        candidates.append((0, 1, 0.02, 0.25))
     if bases[1] is not None and bases[2] is None:
-        candidates.append((1, 2, 0.01, 0.08))
+        candidates.append((1, 2, 0.005, 0.10))
         
     if not candidates: return bases
 
     from_base, to_base, base_attempt, max_attempt = candidates[0]
     runner = bases[from_base]
+    speed = runner.speed
     
-    attempt_prob = base_attempt + (runner.speed / 800.0)
+    # 走力に応じた非線形な盗塁ボーナスの算出
+    # C(60)未満: かなり緩やか（ほぼフラット）
+    if speed < 60.0:
+        speed_bonus = speed * 0.1
+    # C(60〜69): 少し傾斜をつける
+    elif speed < 70.0:
+        speed_bonus = 6.0 + (speed - 60.0) * 0.5
+    # B(70〜79): さらに少し傾斜を強くする
+    elif speed < 80.0:
+        speed_bonus = 11.0 + (speed - 70.0) * 1.2
+    # A(80以上): 再び強い傾斜をつける（韋駄天ボーナス）
+    else:
+        speed_bonus = 23.0 + (speed - 80.0) * 2.5
+
+    # 企図率（スタートを切る確率）への反映
+    attempt_prob = base_attempt + (speed_bonus * 0.003)
     attempt_prob = clamp(attempt_prob, 0.01, max_attempt)
 
     if random.random() >= attempt_prob:
         return bases
 
+    # 成功率への反映（平均的な捕手に対する成功率をベースに計算）
     catcher_def = catcher.defense_at("C")
-    success_prob = 0.70 + (runner.speed - 50.0) * 0.008 - (catcher_def - 50.0) * 0.006
-    success_prob = clamp(success_prob, 0.30, 0.95)
+    success_prob = 0.65 + (speed_bonus * 0.007) - (catcher_def - 50.0) * 0.006
+    success_prob = clamp(success_prob, 0.10, 0.95)
 
     if random.random() < success_prob:
         bases[from_base] = None
