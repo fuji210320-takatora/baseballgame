@@ -478,7 +478,7 @@ def determine_tto(batter, pitcher, game_outs):
     if batter.power < 50.0:
         diff = 50.0 - batter.power
         power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
-        hr_penalty = (diff * 0.001) + ((diff ** 2) * 0.0002) # 本塁打への強いマイナス傾斜
+        hr_penalty = (diff * 0.001) + ((diff ** 2) * 0.0008) # 本塁打への強いマイナス傾斜
     elif batter.power < 60.0:
         diff = 60.0 - batter.power
         power_penalty = diff * 0.3
