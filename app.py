@@ -416,10 +416,29 @@ def clamp(x, lo, hi):
 def choose_pitch(pitcher):
     if not pitcher.pitches:
         return None
+        
     names = list(pitcher.pitches.keys())
-    weights = [RANK_WEIGHT.get(pitcher.pitches[n], 0.8) for n in names]
-    return random.choices(names, weights=weights, k=1)[0]
+    num_pitches = len(names)
+    
+    # 球種数に応じた投球割合（重み）の定義
+    if num_pitches == 1:
+        weights = [100.0]
+    elif num_pitches == 2:
+        weights = [85.0, 15.0]
+    elif num_pitches == 3:
+        weights = [75.0, 20.0, 5.0]
+    elif num_pitches == 4:
+        weights = [60.0, 25.0, 10.0, 5.0]
+    elif num_pitches == 5:
+        weights = [48.0, 30.0, 15.0, 5.0, 2.0]
+    elif num_pitches == 6:
+        weights = [43.0, 28.0, 12.0, 8.0, 6.0, 3.0]
+    else:
+        # 万が一7球種以上あった場合のフェイルセーフ
+        weights = [40.0] + [(60.0 / (num_pitches - 1))] * (num_pitches - 1)
 
+    return random.choices(names, weights=weights, k=1)[0]
+    
 def pitch_quality(pitcher, pitch_name):
     if pitch_name is None:
         return 55.0
