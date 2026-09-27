@@ -532,9 +532,9 @@ def determine_batted_ball(batter):
     """
     Step 2: インプレーになった打球の性質を決定（ゴロ、フライ、ライナー）
     """
-    gb_prob = 0.45 
-    fb_prob = 0.37 
-    ld_prob = 0.18 
+    gb_prob = 0.48
+    fb_prob = 0.35
+    ld_prob = 0.16
 
     fb_prob += (batter.power - 50.0) * 0.002
     ld_prob += (batter.contact - 50.0) * 0.005
