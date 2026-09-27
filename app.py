@@ -1103,9 +1103,8 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         hr_events.extend(hrs_my)
         
         if op_pitcher:
-            op_pitching.current_start_outs = (op_pitcher.pitching.outs - op_pitcher.appearance_start_outs.get(id(op_pitcher), op_pitcher.pitching.outs))
+            op_pitching.current_start_outs = (op_pitcher.pitching.outs - op_pitching.appearance_start_outs.get(id(op_pitcher), op_pitcher.pitching.outs))
             op_pitching.pitcher_runs[id(op_pitcher)] += r_my
-            op_pitching.pitcher_earned[id(op_pitcher)] += r_my
             op_pitcher.pitching.R += r_my
             op_pitcher.pitching.ER += r_my
 
