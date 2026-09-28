@@ -1334,6 +1334,7 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         if winning_pitcher is not None:
             winning_pitcher.pitching.W += 1
             if winning_pitcher in my_pitching.game_holds:
+                winning_pitcher.pitching.HLD -= 1
                 my_pitching.game_holds.remove(winning_pitcher)
 
         if losing_pitcher is not None:
