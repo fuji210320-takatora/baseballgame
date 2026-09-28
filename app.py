@@ -495,15 +495,15 @@ def determine_tto(batter, pitcher, game_outs):
     if batter.power >= 80.0:
         walk_bonus += (batter.power - 80.0) * 0.0015
 
-    # パワー80～90で年間30～40本程度を狙う、緩やかな本塁打傾斜
+    # 本塁打はパワー80～90で年間30～40本程度を狙う
     hr_bonus = 0.0
     if batter.power >= 60.0:
         diff = batter.power - 60.0
-        hr_bonus = (diff * 0.00010) + ((diff ** 2) * 0.000003)
+        hr_bonus = (diff * 0.00020) + ((diff ** 2) * 0.000006)
 
     hr = (
-        0.006
-        + power_diff * 0.00010
+        0.007
+        + power_diff * 0.00015
         + hr_bonus
         - hr_penalty
         - (variety_debuff * 0.3)
