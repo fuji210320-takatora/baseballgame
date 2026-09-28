@@ -2590,9 +2590,14 @@ else:
                 
             era_str = f"{era(p):.2f}"
             
-            html_pitch += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{i}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{role_str}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">防御率</span><span class="ms-val">{era_str}</span></div><div class="ms-item"><span class="ms-label">勝</span><span class="ms-val-small">{p.pitching.W}</span></div><div class="ms-item"><span class="ms-label">敗</span><span class="ms-val-small">{p.pitching.L}</span></div><div class="ms-item"><span class="ms-label">HP</span><span class="ms-val-small">{p.pitching.HLD}</span></div><div class="ms-item"><span class="ms-label">S</span><span class="ms-val-small">{p.pitching.SV}</span></div><div class="ms-item"><span class="ms-label">奪三振</span><span class="ms-val-small">{p.pitching.SO}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.pitching.G}</b></div><div class="ss-item">先発<b>{p.pitching.GS}</b></div><div class="ss-item">投球回<b>{innings_str(p.pitching.outs)}</b></div><div class="ss-item">四球<b>{p.pitching.BB}</b></div><div class="ss-item">自責点<b>{p.pitching.ER}</b></div></div></div>'
+            # ★救援勝利を計算 (全勝利数 - 先発登板時の勝利とみなす)
+            # 簡易的に、先発枠以外での勝利を救援勝利として扱う
+            relief_wins = p.pitching.W if role_str != "先発" else 0
+            hp_val = p.pitching.HLD + relief_wins
+            
+            html_pitch += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{i}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{role_str}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">防御率</span><span class="ms-val">{era_str}</span></div><div class="ms-item"><span class="ms-label">勝</span><span class="ms-val-small">{p.pitching.W}</span></div><div class="ms-item"><span class="ms-label">敗</span><span class="ms-val-small">{p.pitching.L}</span></div><div class="ms-item"><span class="ms-label">HP</span><span class="ms-val-small">{hp_val}</span></div><div class="ms-item"><span class="ms-label">S</span><span class="ms-val-small">{p.pitching.SV}</span></div><div class="ms-item"><span class="ms-label">奪三振</span><span class="ms-val-small">{p.pitching.SO}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.pitching.G}</b></div><div class="ss-item">先発<b>{p.pitching.GS}</b></div><div class="ss-item">投球回<b>{innings_str(p.pitching.outs)}</b></div><div class="ss-item">四球<b>{p.pitching.BB}</b></div><div class="ss-item">自責点<b>{p.pitching.ER}</b></div></div></div>'
         html_pitch += '</div>'
-
+        
         with tab_bat:
             st.markdown(html_bat, unsafe_allow_html=True)
 
