@@ -478,7 +478,7 @@ def determine_tto(batter, pitcher, game_outs):
     if batter.power < 50.0:
         diff = 50.0 - batter.power
         power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
-        hr_penalty = (diff * 0.001) + ((diff ** 2) * 0.0008)
+        hr_penalty = (diff * 0.001) + ((diff ** 2) * 0.00008)
     elif batter.power < 60.0:
         diff = 60.0 - batter.power
         power_penalty = diff * 0.3
@@ -499,7 +499,7 @@ def determine_tto(batter, pitcher, game_outs):
     hr_bonus = 0.0
     if batter.power >= 60.0:
         diff = batter.power - 60.0
-        hr_bonus = (diff * 0.046) + ((diff ** 2) * 0.000012)
+        hr_bonus = (diff * 0.046) + ((diff ** 2) * 0.0012)
 
     hr = (
         0.008
@@ -574,7 +574,7 @@ def resolve_bip(bb_type, batter, defense):
     Step 3: 打球方向と野手の守備力から、最終的な安打/凡退/エラーを判定
     """
     # NEW: ミート力が高いほど、打球が野手の間を抜ける確率が直接アップするボーナス
-    contact_bonus = (batter.contact - 40.0) * 0.0010
+    contact_bonus = (batter.contact - 40.0) * 0.0014
 
     if bb_type == "GB":
         positions = ["1B", "2B", "3B", "SS"]
