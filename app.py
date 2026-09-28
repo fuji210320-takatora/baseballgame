@@ -509,7 +509,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     hr = BASE_PA["hr"] + hit_power_diff * 0.0004 - (power_penalty * 0.0012) + hr_bonus - (variety_debuff * 0.5)
     
     single -= hr_bonus * 0.75
-    double -= hr_bonus * 0.25　
+    double -= hr_bonus * 0.25
     
     walk = BASE_PA["walk"] - control_diff * 0.0012 + walk_bonus
     so = BASE_PA["so"] - raw_contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
