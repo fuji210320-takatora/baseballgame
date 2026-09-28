@@ -442,11 +442,10 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     quality = pitch_quality(pitcher, pitch_name)
     fatigue = fatigue_factor(pitcher, game_outs)
 
-    contact_diff = batter.contact - quality
-    power_diff = batter.power - quality
+    # 【四球や三振用の生の差分】
+    raw_contact_diff = batter.contact - quality
     control_diff = pitcher.control - 50.0
 
-    # 低能力へのペナルティ
     contact_penalty = 0.0
     if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
@@ -459,11 +458,10 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         diff = 60.0 - effective_power
         power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
-    # 投手の球種数による補正
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
 
-    # 強打者ほど警戒され、四球が出やすくなるボーナス
+    # 四球が出やすくなるボーナス（強打者への勝負避けなど。生のパワー・ミートを参照）
     walk_bonus = 0.0
     if batter.power > 50.0:
         walk_bonus += (batter.power - 50.0) * 0.0012
@@ -472,36 +470,43 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     if batter.power >= 80.0:
         walk_bonus += (batter.power - 80.0) * 0.0015
 
-    # パワー58以上へのHR確率ボーナス (Aランク以上の傾斜をより緩やかに修正)
+    # 【追加】ミート+パワーの合計が145を超える「超人」へのソフトキャップ（緩やかな傾斜）
+    eff_contact = batter.contact
+    eff_power = batter.power
+    total_cp = eff_contact + eff_power
+    if total_cp > 145.0:
+        excess = total_cp - 145.0
+        # 単打・二塁打・本塁打の計算においてのみ、超過分の80%をカットして伸びを緩やかにする
+        eff_contact -= (excess * (eff_contact / total_cp)) * 0.80
+        eff_power -= (excess * (eff_power / total_cp)) * 0.80
+
+    hit_contact_diff = eff_contact - quality
+    hit_power_diff = eff_power - quality
+
+    # HR確率ボーナス（制限後の eff_power を使用）
     hr_bonus = 0.0
-    if batter.power >= 58.0:
-        if batter.power < 80.0:
-            diff_58 = batter.power - 58.0
+    if eff_power >= 58.0:
+        if eff_power < 80.0:
+            diff_58 = eff_power - 58.0
             hr_bonus = (diff_58 * 0.0005) + ((diff_58 ** 2) * 0.00006)
         else:
             diff_to_80 = 80.0 - 58.0
             base_bonus_at_80 = (diff_to_80 * 0.0005) + ((diff_to_80 ** 2) * 0.00006)
-            diff_over_80 = batter.power - 80.0
-            # 80以上の傾斜をかなり緩やか（0.0006）にする
+            diff_over_80 = eff_power - 80.0
             hr_bonus = base_bonus_at_80 + (diff_over_80 * 0.0006)
 
-    # 単打における「ミート」の影響力を大幅アップ (0.0008 -> 0.0015)
-    single = BASE_PA["single"] + contact_diff * 0.0015 - (contact_penalty * 0.0010) - variety_debuff
-    double = BASE_PA["double"] + contact_diff * 0.00015 + power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002) - (variety_debuff * 0.5)
-    
-    # 三塁打における「走力」の影響力を大幅アップ (0.000015 -> 0.00006)
+    single = BASE_PA["single"] + hit_contact_diff * 0.0015 - (contact_penalty * 0.0010) - variety_debuff
+    double = BASE_PA["double"] + hit_contact_diff * 0.00015 + hit_power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002) - (variety_debuff * 0.5)
     triple = BASE_PA["triple"] + batter.speed * 0.00006
     
-    # hr_bonusをホームランに加算
-    hr = BASE_PA["hr"] + power_diff * 0.0004 - (power_penalty * 0.0012) + hr_bonus - (variety_debuff * 0.5)
+    hr = BASE_PA["hr"] + hit_power_diff * 0.0004 - (power_penalty * 0.0012) + hr_bonus - (variety_debuff * 0.5)
     
-    # 打率を変えないために、増えたHRの分だけ単打と二塁打の確率を減らす
     single -= hr_bonus * 0.75
     double -= hr_bonus * 0.25
     
-    # walk_bonusを四球確率に加算
+    # walkやsoの計算には生の raw_contact_diff を使用し、強打者が三振しにくいメリットはそのまま残す
     walk = BASE_PA["walk"] - control_diff * 0.0012 + walk_bonus
-    so = BASE_PA["so"] - contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
+    so = BASE_PA["so"] - raw_contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
 
     quality_delta = quality - 60.0
     single -= quality_delta * 0.00045
