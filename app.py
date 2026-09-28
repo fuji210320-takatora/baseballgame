@@ -477,7 +477,7 @@ def determine_tto(batter, pitcher, game_outs):
     # パワー45未満は本塁打を大きく減らす
     if batter.power < 45.0:
         diff = 45.0 - batter.power
-        power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
+        power_penalty = (diff * 0.04) + ((diff ** 2) * 0.001)
         hr_penalty = (diff * 0.0000001) + ((diff ** 2) * 0.00000008)
     elif batter.power < 60.0:
         diff = 60.0 - batter.power
@@ -502,7 +502,7 @@ def determine_tto(batter, pitcher, game_outs):
         hr_bonus = (diff * 0.000046) + ((diff ** 2) * 0.00009)
 
     hr = (
-        0.008
+        0.0008
         + power_diff * 0.00015
         + hr_bonus
         - hr_penalty
