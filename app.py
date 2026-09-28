@@ -466,9 +466,9 @@ def determine_tto(batter, pitcher, game_outs):
     control_diff = pitcher.control - 50.0
 
     contact_penalty = 0.0
-    if batter.contact < 60.0:
+    if batter.contact < 50.0:
         effective_contact = max(40.0, batter.contact)
-        diff = 60.0 - effective_contact
+        diff = 50.0 - effective_contact
         contact_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
     power_penalty = 0.0
@@ -514,7 +514,7 @@ def determine_tto(batter, pitcher, game_outs):
     so = (
         BASE_PA["so"]
         - contact_diff * 0.0025
-        + (contact_penalty * 0.0015)
+        + (contact_penalty * 0.0035)
         + (power_penalty * 0.0008)
         + variety_debuff
     )
