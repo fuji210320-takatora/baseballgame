@@ -787,7 +787,7 @@ class PitchingState:
 
     def get_role_priority(self, inning, score_diff):
         """イニング・点差状況に応じた登板優先順位リストを返す"""
-        if 9 <= inning <= 12 and 1 <= score_diff <= 3:
+        if 9 <= inning <= 12 and 1 <= score_diff <= 4:
             return ["抑え", "中継ぎエース", "僅差", "リード", "ビハインド", "敗戦処理"]
         elif inning == 12 and score_diff == 0:
             return ["抑え", "中継ぎエース", "僅差", "リード", "ビハインド", "敗戦処理"]
