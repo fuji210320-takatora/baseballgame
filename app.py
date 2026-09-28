@@ -475,8 +475,8 @@ def determine_tto(batter, pitcher, game_outs):
     hr_penalty = 0.0
     
     # 49以下の下方向・本塁打への傾斜を強める
-    if batter.power < 50.0:
-        diff = 50.0 - batter.power
+    if batter.power < 54.0:
+        diff = 54.0 - batter.power
         power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
         hr_penalty = (diff * 0.001) + ((diff ** 2) * 0.0008) # 本塁打への強いマイナス傾斜
     elif batter.power < 60.0:
@@ -499,7 +499,7 @@ def determine_tto(batter, pitcher, game_outs):
     hr_bonus = 0.0
     if batter.power >= 60.0:
         diff = batter.power - 60.0
-        hr_bonus = (diff * 0.00011) + ((diff ** 2) * 0.0000002) # 以前より数値を小さく
+        hr_bonus = (diff * 0.00011) + ((diff ** 2) * 0.00005) # 以前より数値を小さく
 
     # power_diffの基本影響(0.0004)も0.00025に下げて傾斜をフラット気味に
     hr = BASE_PA["hr"] + power_diff * 0.00025 - hr_penalty + hr_bonus - (variety_debuff * 0.5)
