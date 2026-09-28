@@ -1337,15 +1337,26 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         if winning_pitcher is not None:
             winning_pitcher.pitching.W += 1
             if winning_pitcher in my_pitching.game_holds:
-                winning_pitcher.pitching.HLD -= 1
+                winning_pitcher.pitching.HLD -= 1  # 勝利投手ならホールドを取り消す
                 my_pitching.game_holds.remove(winning_pitcher)
 
         if losing_pitcher is not None:
             losing_pitcher.pitching.L += 1
 
-        if my_pitcher and my_pitcher is my_pitching.closer and my_pitching.save_eligible and my_pitcher is not winning_pitcher:
-            my_pitcher.pitching.SV += 1
-            save_pitcher = my_pitcher
+        # 新しいセーブ判定（公式ルール準拠・ホームチーム）
+        finishing_pitcher = my_pitcher
+        if finishing_pitcher and finishing_pitcher not in my_pitching.starters and finishing_pitcher is not winning_pitcher:
+            f_id = id(finishing_pitcher)
+            entry_diff = my_pitching.entry_score_diff.get(f_id)
+            if entry_diff is not None and entry_diff > 0:
+                outs_got = finishing_pitcher.pitching.outs - my_pitching.appearance_start_outs.get(f_id, finishing_pitcher.pitching.outs)
+                # 条件: 3点以内のリードで登板、または点差不問で3回(9アウト)以上投球
+                if (1 <= entry_diff <= 3) or outs_got >= 9:
+                    finishing_pitcher.pitching.SV += 1
+                    save_pitcher = finishing_pitcher
+                    if finishing_pitcher in my_pitching.game_holds:
+                        finishing_pitcher.pitching.HLD -= 1
+                        my_pitching.game_holds.remove(finishing_pitcher)
 
         return my_score, op_score, {"result": "W", "winning_pitcher": winning_pitcher, "losing_pitcher": losing_pitcher, "save_pitcher": save_pitcher, "my_linescore": my_linescore, "op_linescore": op_linescore, "hrs": hr_events}
 
@@ -1356,20 +1367,31 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
         if winning_pitcher is not None:
             winning_pitcher.pitching.W += 1
             if winning_pitcher in op_pitching.game_holds:
+                winning_pitcher.pitching.HLD -= 1  # 勝利投手ならホールドを取り消す
                 op_pitching.game_holds.remove(winning_pitcher)
 
         if losing_pitcher is not None:
             losing_pitcher.pitching.L += 1
 
-        if op_pitcher and op_pitcher is op_pitching.closer and op_pitching.save_eligible and op_pitcher is not winning_pitcher:
-            op_pitcher.pitching.SV += 1
-            save_pitcher = op_pitcher
+        # 新しいセーブ判定（公式ルール準拠・アウェイチーム）
+        finishing_pitcher = op_pitcher
+        if finishing_pitcher and finishing_pitcher not in op_pitching.starters and finishing_pitcher is not winning_pitcher:
+            f_id = id(finishing_pitcher)
+            entry_diff = op_pitching.entry_score_diff.get(f_id)
+            if entry_diff is not None and entry_diff > 0:
+                outs_got = finishing_pitcher.pitching.outs - op_pitching.appearance_start_outs.get(f_id, finishing_pitcher.pitching.outs)
+                # 条件: 3点以内のリードで登板、または点差不問で3回(9アウト)以上投球
+                if (1 <= entry_diff <= 3) or outs_got >= 9:
+                    finishing_pitcher.pitching.SV += 1
+                    save_pitcher = finishing_pitcher
+                    if finishing_pitcher in op_pitching.game_holds:
+                        finishing_pitcher.pitching.HLD -= 1
+                        op_pitching.game_holds.remove(finishing_pitcher)
 
         return my_score, op_score, {"result": "L", "winning_pitcher": winning_pitcher, "losing_pitcher": losing_pitcher, "save_pitcher": save_pitcher, "my_linescore": my_linescore, "op_linescore": op_linescore, "hrs": hr_events}
 
     else:
         return my_score, op_score, {"result": "D", "winning_pitcher": None, "losing_pitcher": None, "save_pitcher": None, "my_linescore": my_linescore, "op_linescore": op_linescore, "hrs": hr_events}
-
 # ============================================================
 # 成績表示・UI表示ヘルパー
 # ============================================================
