@@ -514,7 +514,7 @@ def determine_tto(batter, pitcher, game_outs):
     so = (
         BASE_PA["so"]
         - contact_diff * 0.0025
-        + (contact_penalty * 0.0035)
+        + (contact_penalty * 0.0005)
         + (power_penalty * 0.0008)
         + variety_debuff
     )
