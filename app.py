@@ -499,10 +499,10 @@ def determine_tto(batter, pitcher, game_outs):
     hr_bonus = 0.0
     if batter.power >= 60.0:
         diff = batter.power - 60.0
-        hr_bonus = (diff * 0.00028) + ((diff ** 2) * 0.000006)
+        hr_bonus = (diff * 0.00028) + ((diff ** 2) * 0.000008)
 
     hr = (
-        0.007
+        0.008
         + power_diff * 0.00015
         + hr_bonus
         - hr_penalty
