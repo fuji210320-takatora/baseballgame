@@ -497,8 +497,8 @@ def determine_tto(batter, pitcher, game_outs):
 
     # 本塁打はパワー80～90で年間30～40本程度を狙う
     hr_bonus = 0.0
-    if batter.power >= 52.0:
-        diff = batter.power - 52.0
+    if batter.power >= 43.0:
+        diff = batter.power - 43.0
         hr_bonus = (diff * 0.000098) + ((diff ** 2) * 0.00009)
 
     hr = (
