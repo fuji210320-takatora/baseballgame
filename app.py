@@ -471,15 +471,14 @@ def determine_tto(batter, pitcher, game_outs):
         diff = 60.0 - effective_contact
         contact_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
-        power_penalty = 0.0
-    　　hr_penalty = 0.0
+    power_penalty = 0.0
+    hr_penalty = 0.0
 
     # パワー50未満は本塁打を大きく減らす
     if batter.power < 50.0:
         diff = 50.0 - batter.power
         power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
         hr_penalty = (diff * 0.001) + ((diff ** 2) * 0.0008)
-
     elif batter.power < 60.0:
         diff = 60.0 - batter.power
         power_penalty = diff * 0.3
@@ -496,7 +495,7 @@ def determine_tto(batter, pitcher, game_outs):
     if batter.power >= 80.0:
         walk_bonus += (batter.power - 80.0) * 0.0015
 
-    # 本塁打はパワー80～90で30～40本程度を狙う
+    # パワー80～90で年間30～40本程度を狙う、緩やかな本塁打傾斜
     hr_bonus = 0.0
     if batter.power >= 60.0:
         diff = batter.power - 60.0
@@ -545,7 +544,7 @@ def determine_tto(batter, pitcher, game_outs):
         return "so", pitch_name
     else:
         return "bip", pitch_name
-        
+
 def determine_batted_ball(batter):
     """
     Step 2: インプレーになった打球の性質を決定（ゴロ、フライ、ライナー）
