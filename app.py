@@ -497,25 +497,16 @@ def determine_tto(batter, pitcher, game_outs):
 
     # 全体的な本塁打への傾斜を緩やかにする
     hr_bonus = 0.0
-    if batter.power >= 60.0:
-        diff = batter.power - 60.0
-        hr_bonus = (diff * 0.00011) + ((diff ** 2) * 0.00005) # 以前より数値を小さく
+if batter.power >= 60.0:
+    diff = batter.power - 60.0
+    hr_bonus = (diff * 0.00010) + ((diff ** 2) * 0.000003)
 
-    # power_diffの基本影響(0.0004)も0.00025に下げて傾斜をフラット気味に
-    hr = BASE_PA["hr"] + power_diff * 0.00025 - hr_penalty + hr_bonus - (variety_debuff * 0.5)
-    walk = BASE_PA["walk"] - control_diff * 0.0012 + walk_bonus
-    so = BASE_PA["so"] - contact_diff * 0.0025 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
+hr = 0.006 + power_diff * 0.00010 + hr_bonus - hr_penalty - (variety_debuff * 0.3)
 
-    quality_delta = quality - 60.0
-    hr -= quality_delta * 0.00030
-    so += quality_delta * 0.0045
+quality_delta = quality - 60.0
+hr -= quality_delta * 0.00020
 
-    if fatigue < 1.0:
-        hr += (1.0 - fatigue) * 0.015
-        walk += (1.0 - fatigue) * 0.02
-        so -= (1.0 - fatigue) * 0.03
-
-    hr = clamp(hr, 0.001, 0.12)
+hr = clamp(hr, 0.001, 0.09)
     walk = clamp(walk, 0.015, 0.25)
     so = clamp(so, 0.05, 0.45)
 
