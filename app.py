@@ -703,17 +703,17 @@ class PitchingState:
         elif inning == 12 and score_diff == 0:
             return ["抑え", "中継ぎエース", "僅差", "リード", "ビハインド", "敗戦処理"]
         elif 6 <= inning <= 8 and 1 <= score_diff <= 3:
-            return ["中継ぎエース", "僅差", "リード", "抑え", "ビハインド", "敗戦処理"]
+            return ["中継ぎエース", "僅差", "抑え", "リード", "ビハインド", "敗戦処理"]
         elif 1 <= inning <= 8 and score_diff >= 4:
-            return ["リード", "僅差", "中継ぎエース", "ビハインド", "抑え", "敗戦処理"]
+            return ["リード", "抑え", "僅差", "ビハインド", "中継ぎエース", "敗戦処理"]
         elif 9 <= inning <= 12 and score_diff >= 4:
-            return ["リード", "抑え", "中継ぎエース", "僅差", "ビハインド", "敗戦処理"]
+            return ["リード", "中継ぎエース", "抑え", "僅差", "ビハインド", "敗戦処理"]
         elif 1 <= inning <= 9 and -3 <= score_diff <= -1:
             return ["ビハインド", "敗戦処理", "リード", "僅差", "中継ぎエース", "抑え"]
         elif 1 <= inning <= 9 and score_diff <= -4:
             return ["敗戦処理", "ビハインド", "リード", "僅差", "中継ぎエース", "抑え"]
         elif 6 <= inning <= 8 and score_diff == 0:
-            return ["僅差", "中継ぎエース", "リード", "抑え", "ビハインド", "敗戦処理"]
+            return ["中継ぎエース", "抑え", "僅差", "リード", "ビハインド", "敗戦処理"]
         elif 1 <= inning <= 5 and score_diff >= 0:
             return ["リード", "僅差", "ビハインド", "中継ぎエース", "敗戦処理", "抑え"]
             
