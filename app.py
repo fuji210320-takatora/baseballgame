@@ -757,7 +757,6 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
 
 # ============================================================
 # 試合用投手交代 (球数スタミナ・疲労・詳細役割制)
-# ============================================================
 class PitchingState:
     def __init__(self, staff):
         self.starters = staff.get("starters", [])
@@ -770,13 +769,11 @@ class PitchingState:
         self.used_bullpen = []
         self.appearance_start_outs = {}
         self.hold_eligible = {}
+        # ↓ これ以降は不要になりますが、エラーを防ぐため残しておいても構いません
         self.save_eligible = False
         
-        self.game_pitchers = []
-        self.game_holds = []
-        self.pitcher_runs = defaultdict(int)
-        self.pitcher_earned = defaultdict(int)
-        self.max_pitches = {} 
+        # ★追加: 登板時の点差を記録する
+        self.entry_score_diff = {} 
 
     def get_role(self, pitcher):
         if pitcher in self.starters:
