@@ -38,12 +38,12 @@ POSITION_JP = {
 RANK_VALUE = {
     "S": 95.0,
     "A": 85.0,
-    "B": 75.0,
-    "C": 65.0,
-    "D": 55.0,
-    "E": 45.0,
-    "F": 30.0,
-    "G": 10.0,
+    "B": 78.0,
+    "C": 70.0,
+    "D": 68.0,
+    "E": 55.0,
+    "F": 45.0,
+    "G": 32.0,
 }
 
 RANK_WEIGHT = {
@@ -499,7 +499,7 @@ def determine_tto(batter, pitcher, game_outs):
     hr_bonus = 0.0
     if batter.power >= 60.0:
         diff = batter.power - 60.0
-        hr_bonus = (diff * 0.00028) + ((diff ** 2) * 0.000008)
+        hr_bonus = (diff * 0.00046) + ((diff ** 2) * 0.000012)
 
     hr = (
         0.008
