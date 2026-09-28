@@ -474,8 +474,8 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     eff_contact = batter.contact
     eff_power = batter.power
     total_cp = eff_contact + eff_power
-    if total_cp > 145.0:
-        excess = total_cp - 145.0
+    if total_cp > 141.0:
+        excess = total_cp - 141.0
         # 単打・二塁打・本塁打の計算においてのみ、超過分の80%をカットして伸びを緩やかにする
         eff_contact -= (excess * (eff_contact / total_cp)) * 0.80
         eff_power -= (excess * (eff_power / total_cp)) * 0.80
