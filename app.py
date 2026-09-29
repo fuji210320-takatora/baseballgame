@@ -1579,17 +1579,17 @@ def render_test_simulator(fielders_base, pitchers_base):
         
         for p in comp_fielders + comp_pitchers:
             if p.team == "ソフトバンク":
-                p.contact = max(1.0, p.contact - 8.0)
-                p.power = max(1.0, p.power - 8.0)
-                p.speed = max(1.0, p.speed - 5.0)
-                p.control = max(1.0, p.control - 8.0)
-                p.stamina = max(1.0, p.stamina - 8.0)
-            elif p.team == "阪神":
-                p.contact = max(1.0, p.contact - 4.0)
-                p.power = max(1.0, p.power - 4.0)
+                p.contact = max(1.0, p.contact - 3.0)
+                p.power = max(1.0, p.power - 3.0)
                 p.speed = max(1.0, p.speed - 2.0)
-                p.control = max(1.0, p.control - 4.0)
-                p.stamina = max(1.0, p.stamina - 4.0)
+                p.control = max(1.0, p.control - 2.0)
+                p.stamina = max(1.0, p.stamina - 2.0)
+            elif p.team == "阪神":
+                p.contact = max(1.0, p.contact - 2.0)
+                p.power = max(1.0, p.power - 2.0)
+                p.speed = max(1.0, p.speed - 1.0)
+                p.control = max(1.0, p.control - 2.0)
+                p.stamina = max(1.0, p.stamina - 2.0)
                 
         opp_teams = build_teams(comp_fielders, comp_pitchers)
         available_opp_names = [t for t in opp_teams.keys() if t not in exclude_teams]
@@ -2445,20 +2445,20 @@ else:
         for t_name, team_obj in teams.items():
             if t_name == "ソフトバンク":
                 for p in team_obj.fielders:
-                    p.contact = max(1.0, p.contact - 8.0)
-                    p.power = max(1.0, p.power - 8.0)
-                    p.speed = max(1.0, p.speed - 5.0)
-                for p in team_obj.pitchers:
-                    p.control = max(1.0, p.control - 8.0)
-                    p.stamina = max(1.0, p.stamina - 8.0)
-            elif t_name == "阪神":
-                for p in team_obj.fielders:
-                    p.contact = max(1.0, p.contact - 4.0)
-                    p.power = max(1.0, p.power - 4.0)
+                    p.contact = max(1.0, p.contact - 3.0)
+                    p.power = max(1.0, p.power - 3.0)
                     p.speed = max(1.0, p.speed - 2.0)
                 for p in team_obj.pitchers:
-                    p.control = max(1.0, p.control - 4.0)
-                    p.stamina = max(1.0, p.stamina - 4.0)
+                    p.control = max(1.0, p.control - 3.0)
+                    p.stamina = max(1.0, p.stamina - 3.0)
+            elif t_name == "阪神":
+                for p in team_obj.fielders:
+                    p.contact = max(1.0, p.contact - 2.0)
+                    p.power = max(1.0, p.power - 2.0)
+                    p.speed = max(1.0, p.speed - 1.0)
+                for p in team_obj.pitchers:
+                    p.control = max(1.0, p.control - 2.0)
+                    p.stamina = max(1.0, p.stamina - 2.0)
                     
         all_sim_players = list(fielders_all) + list(pitchers_all)
         all_sim_players.extend([p for p, _ in st.session_state.my_lineup])
