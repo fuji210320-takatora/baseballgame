@@ -1005,7 +1005,7 @@ class PitchingState:
             available.append(p)
 
         # 3連投のハードルを上げるため、連投2未満のフレッシュな投手を優先
-        fresh_available = [p for p in available if getattr(p, 'consecutive_games', 0) < 2]
+        fresh_available = [p for p in available if getattr(p, 'consecutive_games', 0) < 3]
 
         def pick_by_priority(pool, prio_list):
             for r in prio_list:
