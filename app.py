@@ -476,7 +476,63 @@ def build_teams(fielders, pitchers):
         for name, data in teams.items()
     }
 
+# ============================================================
+# 他球団 固定オーダー定義（関数の直前などに追加）
+# ============================================================
+OPPONENT_LINEUPS = {
+    "阪神": {"order": [("近本光司", "CF"), ("中野拓夢", "2B"), ("森下翔太", "RF"), ("佐藤輝明", "3B"), ("大山悠輔", "1B"), ("前川右京", "LF"), ("坂本誠志郎", "C"), ("元山飛優", "SS")], "sub": "熊谷敬宥"},
+    "DeNA": {"order": [("度会隆輝", "LF"), ("牧秀悟", "2B"), ("佐野恵太", "1B"), ("エンカーナシオン", "RF"), ("宮﨑敏郎", "3B"), ("蝦名達夫", "CF"), ("宮下朝陽", "SS"), ("松尾汐恩", "C")], "sub": "勝又温史"},
+    "巨人": {"order": [("浦田俊輔", "2B"), ("松本剛", "LF"), ("泉口友汰", "SS"), ("ダルベック", "1B"), ("大城卓三", "C"), ("キャベッジ", "CF"), ("坂本勇人", "3B"), ("中山礼都", "RF")], "sub": "佐々木俊輔"},
+    "中日": {"order": [("岡林勇希", "CF"), ("村松開人", "SS"), ("細川成也", "LF"), ("サノー", "1B"), ("石川昂弥", "3B"), ("石伊雄太", "C"), ("ボスラー", "RF"), ("田中幹也", "2B")], "sub": "福永裕基"},
+    "広島": {"order": [("名原典彦", "RF"), ("菊池涼介", "2B"), ("ファビアン", "LF"), ("坂倉将吾", "3B"), ("モンテロ", "1B"), ("小園海斗", "SS"), ("大盛穂", "CF"), ("持丸泰輝", "C")], "sub": "佐々木泰"},
+    "ヤクルト": {"order": [("長岡秀樹", "SS"), ("サンタナ", "LF"), ("古賀優大", "C"), ("オスナ", "1B"), ("岩田幸宏", "CF"), ("増田珠", "RF"), ("内山壮真", "2B"), ("武岡龍世", "3B")], "sub": "赤羽由紘"},
+    
+    "ソフトバンク": {"order": [("正木智也", "1B"), ("周東佑京", "CF"), ("近藤健介", "LF"), ("栗原陵矢", "3B"), ("柳田悠岐", "DH"), ("柳町達", "RF"), ("牧原大成", "2B"), ("海野隆司", "C"), ("庄子雄大", "SS")]},
+    "日本ハム": {"order": [("水野達稀", "SS"), ("清宮幸太郎", "1B"), ("レイエス", "DH"), ("郡司裕也", "3B"), ("万波中正", "RF"), ("野村佑希", "LF"), ("カストロ", "CF"), ("田宮裕涼", "C"), ("奈良間大己", "2B")]},
+    "オリックス": {"order": [("宗佑磨", "3B"), ("山中稜真", "1B"), ("西川龍馬", "LF"), ("太田椋", "2B"), ("森友哉", "DH"), ("来田涼斗", "RF"), ("紅林弘太郎", "SS"), ("若月健矢", "C"), ("渡部遼人", "CF")]},
+    "楽天": {"order": [("中島大輔", "LF"), ("黒川史陽", "3B"), ("辰己涼介", "CF"), ("マッカスカー", "DH"), ("村林一輝", "SS"), ("浅村栄斗", "1B"), ("佐藤直樹", "RF"), ("太田光", "C"), ("小深田大翔", "2B")]},
+    "西武": {"order": [("カナリオ", "RF"), ("小島大河", "C"), ("渡部聖弥", "3B"), ("ネビン", "1B"), ("林安可", "DH"), ("桑原将志", "LF"), ("石井一成", "2B"), ("源田壮亮", "SS"), ("西川愛也", "CF")]},
+    "ロッテ": {"order": [("藤原恭大", "CF"), ("西川史礁", "RF"), ("寺地隆成", "3B"), ("山口航輝", "LF"), ("佐藤都志也", "C"), ("ソト", "1B"), ("友杉篤輝", "SS"), ("ポランコ", "DH"), ("小川龍成", "2B")]}
+}
+
 def best_lineup_for_team(team, dh=True):
+    # 1. 指定の固定オーダーがある場合はそれを優先
+    if team.name in OPPONENT_LINEUPS:
+        lineup = []
+        target = OPPONENT_LINEUPS[team.name]
+        
+        # 名前から選手オブジェクトを探すヘルパー
+        def get_p(name):
+            for p in team.fielders:
+                if p.name == name: return p
+            return None
+        
+        for name, pos in target["order"]:
+            # パ・リーグ球団がDHなし（セ・リーグ主催）で戦う場合、DHをスタメンから外す
+            if not dh and pos == "DH":
+                continue
+                
+            player = get_p(name)
+            if player:
+                lineup.append((player, pos))
+        
+        # セ・リーグ球団がDHあり（パ・リーグ主催）で戦う場合、控え1番手をDHに挿入
+        if dh and len(lineup) == 8 and "sub" in target:
+            sub_player = get_p(target["sub"])
+            if sub_player:
+                lineup.append((sub_player, "DH"))
+                
+        # Excelに選手が存在しなかったり誤字があった場合の安全対策（自動で埋める）
+        needed = 9 if dh else 8
+        if len(lineup) < needed:
+            used = [p.name for p, _ in lineup]
+            remain = sorted([p for p in team.fielders if p.name not in used], key=lambda x: x.contact + x.power, reverse=True)
+            while len(lineup) < needed and remain:
+                lineup.append((remain.pop(0), "DH" if dh and len(lineup) == 8 else "不明"))
+                
+        return lineup
+        
+    # 2. 定義がない場合（作成したマイチーム等）は元々の自動最適化ロジックを実行
     lineup = assign_initial_positions(team.fielders, dh=dh)
     lineup = decide_batting_order(lineup)
     if len(lineup) > 9:
