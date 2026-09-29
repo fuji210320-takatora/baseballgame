@@ -223,12 +223,24 @@ def load_pitchers(source):
 # ============================================================
 # セイバーメトリクス計算
 # ============================================================
+
 def calc_woba(p):
     b = p.batting
     if b.PA == 0:
         return 0.0
+    
     single = b.H - b.double - b.triple - b.HR
-    return (0.69 * b.BB + 0.89 * single + 1.27 * b.double + 1.62 * b.triple + 2.10 * b.HR) / b.PA
+    # 死球(HBP)や失策出塁はデータにないため近似（死球はPAの約1%、失策出塁は0とする）
+    hbp = b.PA * 0.01 
+    bb = b.BB # 故意四球は0とする
+    
+    # wOBA分子・分母
+    numerator = 0.692 * bb + 0.73 * hbp + 0.865 * single + 1.334 * b.double + 1.725 * b.triple + 2.065 * b.HR
+    denominator = b.AB + bb + hbp + b.SF
+    
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator
 
 def calc_wrc_plus(p):
     woba = calc_woba(p)
@@ -240,21 +252,71 @@ def calc_batter_war(p, main_pos):
     b = p.batting
     if b.PA == 0:
         return 0.0
-    
+        
     woba = calc_woba(p)
-    wraa = ((woba - 0.320) / 1.2) * b.PA
+    league_woba = 0.320
+    woba_scale = 1.24
+    rpw = 9.5
     
+    # 1. Batting (wRAA)
+    wraa = ((woba - league_woba) / woba_scale) * b.PA
+    
+    # 2. Base Running (wSB + UBR)
+    # 盗塁得点 0.20, 盗塁死得点 -0.40
+    run_a = (b.SB * 0.20) + (b.CS * -0.40)
+    single = b.H - b.double - b.triple - b.HR
+    run_c = single + b.BB
+    # リーグ平均の係数Bを 0.05 と仮定して計算
+    wsb = run_a - (0.05 * run_c)
+    
+    # UBR（全打席の得点期待値を追跡すると処理が膨大なため、走力から近似推計）
+    # 平均走力50を基準とし、打席数に応じて得点増減を算出
+    ubr = (p.speed - 50.0) * 0.003 * b.PA
+    base_running = wsb + ubr
+    
+    # 3. Defense (UZR + 補正値)
     pos_adj_table = {
-        "C": 12.5, "SS": 7.5, "2B": 2.5, "3B": 2.5, 
-        "CF": 2.5, "LF": -7.5, "RF": -7.5, "1B": -12.5, 
-        "DH": -12.5, "代打": -12.5
+        "C": 12.1, "1B": -10.1, "2B": 3.0, "3B": -3.5, 
+        "SS": 7.3, "LF": -7.0, "CF": 3.2, "RF": -3.0, 
+        "DH": -11.1, "代打": -11.1
     }
-    pos_adj = pos_adj_table.get(main_pos, -12.5) * (b.PA / 500.0)
+    # UBRは試合中に計算・加算されているのでそのまま使用し、ポジション補正をPA比で乗算
+    pos_adj = pos_adj_table.get(main_pos, -11.1) * (b.PA / 500.0)
+    defense = p.fielding.UZR + pos_adj
     
-    bsr = b.SB * 0.2 - b.CS * 0.4
-    rep_level = 15.0 * (b.PA / 500.0)
+    # 4. Replacement (代替選手水準)
+    replacement = ((league_woba - 0.88 * league_woba) / woba_scale) * b.PA
     
-    return (wraa + p.fielding.UZR + bsr + pos_adj + rep_level) / 9.5
+    # RAR & WAR計算
+    rar = wraa + base_running + defense + replacement
+    return rar / rpw
+
+def calc_tra(p):
+    pt = p.pitching
+    if pt.outs == 0:
+        return 0.0
+    
+    # シミュレータ上のスタッツからインプレー打球(BIP)の性質を一般的な比率で推計
+    bip = max(0, pt.BF - pt.SO - pt.BB - pt.HR)
+    gb = bip * 0.45   # ゴロ 45%
+    fb = bip * 0.35   # 外野フライ 35%
+    iff = bip * 0.10  # 内野フライ 10%
+    ld = bip * 0.10   # ライナー 10%
+    
+    # 死球は四球の約10%と推計
+    hbp = pt.BB * 0.10
+    bb = pt.BB * 0.90
+    
+    numerator = (0.297 * bb + 0.327 * hbp - 0.108 * pt.SO + 1.401 * pt.HR + 
+                 0.036 * gb - 0.124 * iff + 0.132 * fb + 0.289 * ld)
+    
+    denominator = (pt.SO + 0.745 * gb + 0.304 * ld + 0.994 * iff + 0.675 * fb)
+    
+    if denominator == 0:
+        return 0.0
+        
+    tra_raw = (numerator / denominator) * 27
+    return tra_raw + 3.10  # 定数（防御率スケールに合わせる）
 
 def calc_fip(p):
     pt = p.pitching
@@ -268,11 +330,23 @@ def calc_pitcher_war(p):
     pt = p.pitching
     if pt.outs == 0:
         return 0.0
-    ip = pt.outs / 3.0
-    fip = calc_fip(p)
     
-    runs_above_avg = (3.50 - fip) * (ip / 9.0)
-    war = (runs_above_avg / 9.5) + (0.11 * ip)
+    tra = calc_tra(p)
+    league_tra = 3.50  # リーグ平均tRAを3.50と設定
+    rpw = 9.5
+    
+    ip = pt.outs / 3.0
+    
+    # 先発と救援の割合を算出
+    starter_ratio = pt.GS / pt.G if pt.G > 0 else 0.0
+    relief_ratio = 1.0 - starter_ratio
+    
+    # (守備から独立したアウト数÷3) は「投球回(ip)」と同義として計算
+    sprar = ((1.19 * league_tra + 0.30 - tra) / 9) * ip
+    rprar = ((1.19 * league_tra - 0.55 - tra) / 9) * ip
+    
+    # 先発/救援の登板比率で加重平均してWARを算出
+    war = (sprar * starter_ratio + rprar * relief_ratio) / rpw
     return war
 
 # ============================================================
