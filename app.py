@@ -581,9 +581,9 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     control_diff = pitcher.control - 50.0
 
     contact_penalty = 0.0
-    if batter.contact < 60.0:
+    if batter.contact < 63.0:
         effective_contact = max(40.0, batter.contact)
-        diff = 60.0 - effective_contact
+        diff = 63.0 - effective_contact
         contact_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
     power_penalty = 0.0
@@ -608,8 +608,8 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     total_cp = eff_contact + eff_power
     if total_cp > 141.0:
         excess = total_cp - 141.0
-        eff_contact -= (excess * (eff_contact / total_cp)) * 0.90
-        eff_power -= (excess * (eff_power / total_cp)) * 0.90
+        eff_contact -= (excess * (eff_contact / total_cp)) * 0.80
+        eff_power -= (excess * (eff_power / total_cp)) * 0.97
 
     hit_contact_diff = eff_contact - quality
     hit_power_diff = eff_power - quality
@@ -652,7 +652,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     single = clamp(single, 0.01, 0.30)
     double = clamp(double, 0.002, 0.12)
     triple = clamp(triple, 0.001, 0.03)
-    hr = clamp(hr, 0.001, 0.12)
+    hr = clamp(hr, 0.001, 0.09)
     walk = clamp(walk, 0.015, 0.25)
     so = clamp(so, 0.05, 0.45)
 
