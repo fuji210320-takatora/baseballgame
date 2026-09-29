@@ -822,10 +822,10 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
     if from_base == 0:
         # 一塁から二塁への盗塁
         # 走力40まではほぼ走らない(1%)。そこから走力に応じて急上昇（走力80で約25%、90で31%）
-        attempt_prob = 0.01 + max(0.0, runner.speed - 40.0) * 0.002
+        attempt_prob = 0.01 + max(0.0, runner.speed - 40.0) * 0.003
     else:
         # 二塁から三塁への盗塁（難易度が高いため基準を厳しく）
-        attempt_prob = 0.002 + max(0.0, runner.speed - 65.0) * 0.004
+        attempt_prob = 0.002 + max(0.0, runner.speed - 65.0) * 0.002
 
     # 企画率の上限・下限（鈍足でもエンドランのサイン等でごく稀に走る）
     attempt_prob = clamp(attempt_prob, 0.005, 0.35)
