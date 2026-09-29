@@ -950,30 +950,28 @@ class PitchingState:
         if new is None or new is old:
             return self.current
 
-        # ======= ホールド判定（ここから） =======
+        # ======= ホールド判定 =======
         old_id = id(old)
         entered_score = self.hold_eligible.get(old_id)
         
         if old in self.bullpen and entered_score is not None:
-            # アウトを1つ以上取っているか確認
+            # アウトを1つ以上取っているか
             outs_got = old.pitching.outs - self.appearance_start_outs.get(old_id, old.pitching.outs)
-            
             if outs_got > 0 and old is not self.closer:
                 is_hold = False
                 # ① 3点以内のリードで登板し、リードを保って降板
                 if 1 <= entered_score <= 3 and score_diff > 0:
                     is_hold = True
-                # ② 4点以上のリードで登板したが、3イニング(9アウト)以上投げた場合
+                # ② 4点以上のリードで登板したが、3イニング(9アウト)以上投げた
                 elif entered_score >= 4 and score_diff > 0 and outs_got >= 9:
                     is_hold = True
-                # ③ 同点の状況で登板し、同点のまま（または勝ち越して）降板
+                # ③ 同点で登板し、同点またはリードして降板
                 elif entered_score == 0 and score_diff >= 0:
                     is_hold = True
                 
                 if is_hold:
                     old.pitching.HLD += 1
                     self.game_holds.append(old)
-        # ======= ホールド判定（ここまで） =======
 
         if new not in self.used_bullpen and (new in self.bullpen or new is self.closer):
             self.used_bullpen.append(new)
@@ -986,14 +984,13 @@ class PitchingState:
         self.current_start_outs = 0
         self.appearance_start_outs[id(new)] = new.pitching.outs
 
-        # 登板時の点差を記録（マイナスはビハインド）
+        # ▼ ここが最重要！登板時の点差を記録（セーブ判定に使います）
+        self.entry_score_diff[id(new)] = score_diff
+
         if new in self.bullpen:
             self.hold_eligible[id(new)] = score_diff
-        if new is self.closer:
-            self.save_eligible = inning >= 8 and 0 < score_diff <= 3
-
+            
         return self.current
-
 # ============================================================
 # 1試合シミュレーションロジック
 # ============================================================
