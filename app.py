@@ -804,35 +804,61 @@ def attempt_steal(bases, offense_lineup, defense, game_state=None):
     catcher = defense.get("C")
     if catcher is None:
         return bases
+        
     candidates = []
+    # 盗塁可能な走者を探す（先の塁が空いているか）
     if bases[0] is not None and bases[1] is None:
-        candidates.append((0, 1, 0.10, 0.34))
+        candidates.append((0, 1))
     if bases[1] is not None and bases[2] is None:
-        candidates.append((1, 2, 0.045, 0.22))
+        candidates.append((1, 2))
+        
     if not candidates:
         return bases
 
-    from_base, to_base, base_attempt, speed_factor = candidates[0]
+    from_base, to_base = candidates[0]
     runner = bases[from_base]
-    attempt_prob = base_attempt + runner.speed / 500.0
-    attempt_prob = clamp(attempt_prob, 0.03, 0.34 if from_base == 0 else 0.18)
 
+    # ===== 1. 盗塁企画率（走るかどうか）の計算 =====
+    if from_base == 0:
+        # 一塁から二塁への盗塁
+        # 走力40まではほぼ走らない(1%)。そこから走力に応じて急上昇（走力80で約25%、90で31%）
+        attempt_prob = 0.01 + max(0.0, runner.speed - 40.0) * 0.006
+    else:
+        # 二塁から三塁への盗塁（難易度が高いため基準を厳しく）
+        attempt_prob = 0.002 + max(0.0, runner.speed - 65.0) * 0.004
+
+    # 企画率の上限・下限（鈍足でもエンドランのサイン等でごく稀に走る）
+    attempt_prob = clamp(attempt_prob, 0.005, 0.35)
+
+    # 乱数が企画率を上回ったら走らない（何もしない）
     if random.random() >= attempt_prob:
         return bases
 
+    # ===== 2. 盗塁成功率の計算 =====
     catcher_def = catcher.defense_at("C")
-    success_prob = (0.10 + (runner.speed - 30.0) * 0.007 - (catcher_def - 30.0) * 0.004)
-    success_prob = clamp(success_prob, 0.03, 0.88)
+    
+    # 基準成功率をNPB平均に近い70%(0.70)に設定
+    # 走力が50から1上がるごとに+0.8%、捕手守備が50から1上がるごとに-0.6%
+    # 例：走力80 vs 守備50 ＝ 70% + 24% = 94%成功
+    # 例：走力80 vs 守備80 ＝ 70% + 24% - 18% = 76%成功
+    success_prob = 0.70 + (runner.speed - 50.0) * 0.008 - (catcher_def - 50.0) * 0.006
+    
+    # 成功率の上限95%、下限10%
+    success_prob = clamp(success_prob, 0.10, 0.95)
 
+    # ===== 3. 結果の判定 =====
     if random.random() < success_prob:
+        # 盗塁成功
         bases[from_base] = None
         bases[to_base] = runner
         runner.batting.SB += 1
     else:
+        # 盗塁失敗
         bases[from_base] = None
         runner.batting.CS += 1
         if game_state is not None:
             game_state["outs"] += 1
+            
     return bases
 
 # ============================================================
