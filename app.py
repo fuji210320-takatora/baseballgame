@@ -703,7 +703,7 @@ def resolve_outcome(result, defense):
     error_prob = clamp(base_error_prob * (1.0 + ability_factor), 0.001, 0.020)
 
     # 守備範囲が狭いことによる「隠れたヒット（記録は単打）」の発生確率 (最大8%)
-    range_hit_prob = clamp((50.0 - ability) * 0.0015, 0.0, 0.08)
+    range_hit_prob = clamp((50.0 - ability) * 0.0015, 0.0, 0.03)
 
     rand_val = random.random()
     if rand_val < error_prob:
