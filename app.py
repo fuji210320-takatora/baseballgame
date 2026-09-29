@@ -368,7 +368,7 @@ def decide_pitcher_roles(pitchers):
     for p in starters:
         roles[p.name] = "先発"
         
-    role_slots = ["抑え", "中継ぎエース", "中継ぎエース", "僅差", "僅差", "リード", "リード", "ビハインド", "敗戦処理"]
+    role_slots = ["抑え", "中継ぎエース", "僅差", "僅差", "リード", "リード", "ビハインド", "ビハインド", "敗戦処理"]
     
     for i, p in enumerate(remaining):
         if i < len(role_slots):
