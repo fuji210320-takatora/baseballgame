@@ -325,25 +325,31 @@ def calc_fip(p):
     ip = pt.outs / 3.0
     fip = (13 * pt.HR + 3 * pt.BB - 2 * pt.SO) / ip + 3.10
     return max(0.0, fip)
-
 def calc_pitcher_war(p):
     pt = p.pitching
     if pt.outs == 0:
         return 0.0
     
     tra = calc_tra(p)
-    league_tra = 3.50  # リーグ平均tRAを3.50と設定
+    league_tra = 3.50  # リーグ平均tRA
     rpw = 9.5
     
-    ip = pt.outs / 3.0
+    # 死球は四球の約10%、犠飛・犠打・失策出塁はデータにないため合算で対戦打者の約3%と推計
+    hbp = pt.BB * 0.10
+    total_bb = pt.BB + hbp
+    sf_sh_roe = pt.BF * 0.03
+    
+    # 守備から独立したアウト数 ＝ 奪三振 ＋ (打者との対戦数 － 被安打 － 奪三振 － 与四死球 － 犠飛 － 犠打 － 失策出塁)
+    defense_independent_outs = pt.SO + max(0, pt.BF - pt.H - pt.SO - total_bb - sf_sh_roe)
+    dio_innings = defense_independent_outs / 3.0
     
     # 先発と救援の割合を算出
     starter_ratio = pt.GS / pt.G if pt.G > 0 else 0.0
     relief_ratio = 1.0 - starter_ratio
     
-    # (守備から独立したアウト数÷3) は「投球回(ip)」と同義として計算
-    sprar = ((1.19 * league_tra + 0.30 - tra) / 9) * ip
-    rprar = ((1.19 * league_tra - 0.55 - tra) / 9) * ip
+    # (守備から独立したアウト数÷3) を用いて SPRAR / RPRAR を計算
+    sprar = ((1.19 * league_tra + 0.30 - tra) / 9) * dio_innings
+    rprar = ((1.19 * league_tra - 0.55 - tra) / 9) * dio_innings
     
     # 先発/救援の登板比率で加重平均してWARを算出
     war = (sprar * starter_ratio + rprar * relief_ratio) / rpw
