@@ -2210,12 +2210,21 @@ else:
 
         st.markdown('<div class="disclaimer-box">全12球団が143試合を戦い抜いた、完全なシミュレーション結果です。</div>', unsafe_allow_html=True)
 
+        all_teams_data = result["all_teams_data"]
+        team_list = ["マイチーム"] + [t for t in all_teams_data.keys() if t != "マイチーム"]
+        
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            selected_team = st.selectbox("📊 成績を表示するチーム", team_list)
+
         tab_bat, tab_pitch, tab_detail, tab_team, tab_standings, tab_log = st.tabs(["打撃成績", "投球成績", "個人詳細成績", "チーム成績", "順位表", "全試合ログ"])
 
-        batters_to_show = list(st.session_state.my_lineup)
-        if st.session_state.my_bench: batters_to_show.append((st.session_state.my_bench, "代打"))
+        t_data = all_teams_data[selected_team]
+        batters_to_show = list(t_data["lineup"])
+        if selected_team == "マイチーム" and st.session_state.my_bench:
+            batters_to_show.append((st.session_state.my_bench, "代打"))
             
-        staff = st.session_state.my_staff
+        staff = t_data["staff"]
         pitchers_list = staff["starters"] + staff["bullpen"] + ([staff["closer"]] if staff["closer"] else [])
 
         html_bat = '<div class="stats-container">'
@@ -2274,9 +2283,8 @@ else:
             st.dataframe(pd.DataFrame(pit_df_data), hide_index=True, use_container_width=True)
 
         with tab_team:
-            st.subheader("チーム通算成績")
-            my_players = [p for p, _ in st.session_state.my_lineup]
-            if st.session_state.my_bench: my_players.append(st.session_state.my_bench)
+            st.subheader(f"{selected_team} 通算成績")
+            my_players = [p for p, _ in batters_to_show]
             
             t_ab = sum(p.batting.AB for p in my_players)
             t_h = sum(p.batting.H for p in my_players)
@@ -2288,12 +2296,12 @@ else:
             t_era = t_er * 27 / t_outs if t_outs > 0 else 0.0
 
             col1, col2, col3 = st.columns(3)
-            col1.metric("チーム得点", result["runs_for"])
+            col1.metric("チーム得点", t_data["runs_for"])
             col2.metric("チーム打率", fmt_pct(t_avg))
             col3.metric("チーム本塁打", t_hr)
             
             col4, col5, col6 = st.columns(3)
-            col4.metric("チーム失点", result["runs_against"])
+            col4.metric("チーム失点", t_data["runs_against"])
             col5.metric("チーム防御率", f"{t_era:.2f}")
 
         with tab_standings:
