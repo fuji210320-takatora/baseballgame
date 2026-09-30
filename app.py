@@ -422,13 +422,184 @@ def best_lineup_for_team(team, dh=True):
     if len(lineup) > 9: lineup = lineup[:9]
     return lineup
 
+# ============================================================
+# 他球団 固定投手起用定義（追加）
+# ============================================================
+OPPONENT_PITCHERS = {
+    "阪神": {
+        "先発": ["村上 頌樹", "髙橋 遥人", "才木 浩人", "大竹 耕太郎", "西 勇輝", "伊原 陵人"],
+        "抑え": "ドリス",
+        "中継ぎエース": "工藤 泰成",
+        "僅差": ["木下 里都", "岩崎 優"],
+        "リード": ["及川 雅貴", "セベリーノ"],
+        "ビハインド": ["湯浅 京己", "神宮 僚介"],
+        "敗戦処理": ["桐敷 拓馬"]
+    },
+    "DeNA": {
+        "先発": ["東 克樹", "石田 裕太郎", "平良 拳太郎", "尾形 崇斗", "深沢 鳳介", "片山 皓心"],
+        "抑え": "レイノルズ",
+        "中継ぎエース": "中川 虎大",
+        "僅差": ["伊勢 大夢", "浜地 真澄"],
+        "リード": ["ルイーズ", "岩田 将貴"],
+        "ビハインド": ["吉野 光樹", "宮城 滝太"],
+        "敗戦処理": ["坂本 裕哉"]
+    },
+    "巨人": {
+        "先発": ["井上 温大", "戸郷 翔征", "小笠原 慎之介", "ウィットリー", "竹丸 和幸", "田中 将大"],
+        "抑え": "マルティネス",
+        "中継ぎエース": "田中 瑛斗",
+        "僅差": ["大勢", "中川 皓太"],
+        "リード": ["船迫 大雅", "堀田 賢慎"],
+        "ビハインド": ["赤星 優志", "森田 駿哉"],
+        "敗戦処理": ["田和 廉"]
+    },
+    "ヤクルト": {
+        "先発": ["山野 太一", "奥川 恭伸", "高梨 裕稔", "松本 健吾", "吉村 貢司郎", "高橋 奎二"],
+        "抑え": "キハダ",
+        "中継ぎエース": "清水 昇",
+        "僅差": ["星 知弥", "リランソ"],
+        "リード": ["廣澤 優", "丸山 翔大"],
+        "ビハインド": ["阪口 皓亮", "石原 勇輝"],
+        "敗戦処理": ["荘司 宏太"]
+    },
+    "中日": {
+        "先発": ["髙橋 宏斗", "柳 裕也", "大野 雄大", "金丸 夢斗", "マラー", "涌井 秀章"],
+        "抑え": "松山 晋也",
+        "中継ぎエース": "吉田 聖弥",
+        "僅差": ["橋本 侑樹", "齋藤 綱記"],
+        "リード": ["藤嶋 健人", "森 博人"],
+        "ビハインド": ["メヒア", "草加 勝"],
+        "敗戦処理": ["伊藤 茉央"]
+    },
+    "広島": {
+        "先発": ["栗林 良吏", "床田 寛樹", "森下 暢仁", "森 翔平", "玉村 昇悟", "斉藤 優汰"],
+        "抑え": "森浦 大輔",
+        "中継ぎエース": "ハーン",
+        "僅差": ["遠藤 淳志", "髙 太一"],
+        "リード": ["岡本 駿", "中﨑 翔太"],
+        "ビハインド": ["鈴木 健矢", "塹江 敦哉"],
+        "敗戦処理": ["辻 大雅"]
+    },
+    "日本ハム": {
+        "先発": ["北山 亘基", "伊藤 大海", "達 孝太", "加藤 貴之", "細野 晴希", "有原 航平"],
+        "抑え": "柳川 大晟",
+        "中継ぎエース": "島本 浩也",
+        "僅差": ["堀 瑞輝", "田中 正義"],
+        "リード": ["福島 蓮", "上原 健太"],
+        "ビハインド": ["孫 易磊", "山﨑 福也"],
+        "敗戦処理": ["生田目 翼"]
+    },
+    "ソフトバンク": {
+        "先発": ["前田 悠伍", "上沢 直之", "大津 亮介", "松本 晴", "モイネロ", "スチュワート・ジュニア"],
+        "抑え": "杉山 一樹",
+        "中継ぎエース": "松本 裕樹",
+        "僅差": ["オスナ", "津森 宥紀"],
+        "リード": ["ヘルナンデス", "上茶谷 大河"],
+        "ビハインド": ["木村 光", "鈴木 豪太"],
+        "敗戦処理": ["伊藤 優輔"]
+    },
+    "ロッテ": {
+        "先発": ["ジャクソン", "小島 和哉", "田中 晴也", "廣池 康志郎", "毛利 海大", "ルケーシー"],
+        "抑え": "横山 陸人",
+        "中継ぎエース": "鈴木 昭汰",
+        "僅差": ["八木 彬", "中森 俊介"],
+        "リード": ["益田 直也", "高野 脩汰"],
+        "ビハインド": ["澤田 圭佑", "小野 郁"],
+        "敗戦処理": ["坂本 光士郎"]
+    },
+    "オリックス": {
+        "先発": ["エスピノーザ", "九里 亜蓮", "ジェリー", "曽谷 龍平", "髙島 泰都", "田嶋 大樹"],
+        "抑え": "マチャド",
+        "中継ぎエース": "椋木 蓮",
+        "僅差": ["山﨑 颯一郎", "寺西 成騎"],
+        "リード": ["入山 海斗", "吉田 輝星"],
+        "ビハインド": ["博志", "片山 楽生"],
+        "敗戦処理": ["岩嵜 翔"]
+    },
+    "楽天": {
+        "先発": ["早川 隆久", "前田 健太", "岸 孝之", "古謝 樹", "荘司 康誠", "瀧中 瞭太"],
+        "抑え": "藤平 尚真",
+        "中継ぎエース": "加治屋 蓮",
+        "僅差": ["九谷 瑠", "鈴木 翔天"],
+        "リード": ["西垣 雅矢", "柴田 大地"],
+        "ビハインド": ["泰 勝利", "田中 千晴"],
+        "敗戦処理": ["津留﨑 大成"]
+    },
+    "西武": {
+        "先発": ["隅田 知一郎", "平良 海馬", "髙橋 光成", "武内 夏暉", "渡邉 勇太朗", "菅井 信也"],
+        "抑え": "ウィンゲンター",
+        "中継ぎエース": "甲斐野 央",
+        "僅差": ["豆田 泰志", "岩城 颯空"],
+        "リード": ["佐藤 隼輔", "篠原 響"],
+        "ビハインド": ["森脇 亮介", "黒田 将矢"],
+        "敗戦処理": ["浜屋 将太"]
+    }
+}
+
 def best_pitching_staff(team):
+    # 1. 指定の固定投手陣がある場合はそれを優先
+    if team.name in OPPONENT_PITCHERS:
+        target = OPPONENT_PITCHERS[team.name]
+        starters = []
+        bullpen = []
+        closer = None
+        bullpen_roles = {}
+        
+        # スペースの有無を無視して選手を探すヘルパー関数
+        def get_p(name):
+            clean_name = name.replace(" ", "").replace("・", "")
+            for p in team.pitchers:
+                if p.name.replace(" ", "").replace("・", "") == clean_name:
+                    return p
+            return None
+
+        for name in target.get("先発", []):
+            player = get_p(name)
+            if player: starters.append(player)
+            
+        c_name = target.get("抑え", "")
+        c_player = get_p(c_name)
+        if c_player: closer = c_player
+
+        for role in ["中継ぎエース", "僅差", "リード", "ビハインド", "敗戦処理"]:
+            names = target.get(role, [])
+            if isinstance(names, str): names = [names]
+            for name in names:
+                player = get_p(name)
+                if player:
+                    bullpen.append(player)
+                    bullpen_roles[id(player)] = role
+                    
+        # 万が一Excelに選手が存在しない場合の安全対策（自動穴埋め）
+        used_ids = set([id(p) for p in starters + bullpen + ([closer] if closer else [])])
+        remain = [p for p in team.pitchers if id(p) not in used_ids]
+        remain.sort(key=lambda x: x.stamina, reverse=True)
+        
+        while len(starters) < 6 and remain:
+            starters.append(remain.pop(0))
+        if not closer and remain:
+            remain.sort(key=lambda x: x.control, reverse=True) # 抑え候補は制球重視で補充
+            closer = remain.pop(0)
+        while remain:
+            p = remain.pop(0)
+            bullpen.append(p)
+            bullpen_roles[id(p)] = "敗戦処理" # 余りはとりあえず敗戦処理
+            
+        return {
+            "starters": starters,
+            "bullpen": bullpen,
+            "closer": closer,
+            "bullpen_roles": bullpen_roles,
+        }
+
+    # 2. 定義がない場合（マイチーム等）は元々の自動最適化ロジックを実行
     roles = decide_pitcher_roles(team.pitchers)
     starters = [p for p in team.pitchers if roles.get(p.name) == "先発"]
     closer_list = [p for p in team.pitchers if roles.get(p.name) == "抑え"]
     closer = closer_list[0] if closer_list else None
     bullpen = [p for p in team.pitchers if roles.get(p.name) not in ("先発", "抑え")]
     bullpen_roles = {id(p): roles.get(p.name) for p in bullpen}
+    
     return { "starters": starters, "bullpen": bullpen, "closer": closer, "bullpen_roles": bullpen_roles }
 
 def build_opponent_team(team, dh):
