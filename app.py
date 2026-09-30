@@ -502,11 +502,11 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         p_pow = 50.0
 
     # 三振: 球種球威8割、投手制球2割
-    so_quality = (p_pow * 0.8) + (pitcher.control * 0.2)
+    so_quality = (p_pow * 0.8) + (pitcher.control * 0.2) + 10.0
     # 四球: 球種制球7割、投手制球3割
-    bb_quality = (p_ctrl * 0.7) + (pitcher.control * 0.3)
+    bb_quality = (p_ctrl * 0.7) + (pitcher.control * 0.3) + 10.0
     # 凡打(インプレー): 球種制球2割、球種球威5割、投手制球3割
-    batted_quality = (p_ctrl * 0.2) + (p_pow * 0.5) + (pitcher.control * 0.3)
+    batted_quality = (p_ctrl * 0.2) + (p_pow * 0.5) + (pitcher.control * 0.3) + 10.0
 
     fatigue = fatigue_factor(pitcher, game_outs)
 
