@@ -733,8 +733,8 @@ def at_bat_probabilities(batter, pitcher, game_outs):
         eff_contact = 65.0 + (excess_contact * 0.45)
 
     total_cp = eff_contact + eff_power
-    if total_cp > 141.0:
-        excess = total_cp - 141.0
+    if total_cp > 190.0:
+        excess = total_cp - 190.0
         eff_contact -= (excess * (eff_contact / total_cp)) * 0.50
         eff_power -= (excess * (eff_power / total_cp)) * 0.50
 
