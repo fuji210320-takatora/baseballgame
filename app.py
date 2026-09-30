@@ -602,7 +602,7 @@ def reset_stats(players):
         p.force_continue_outs = 0
 
 # ============================================================
-# 能力値 → 確率
+# 能力値 → 確率 （2段階抽選システム）
 # ============================================================
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
@@ -633,13 +633,14 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     quality = pitch_quality(pitcher, pitch_name)
     fatigue = fatigue_factor(pitcher, game_outs)
 
+    # 共通のステータス補正計算
     raw_contact_diff = batter.contact - quality
     control_diff = pitcher.control - 50.0
 
     contact_penalty = 0.0
-    if batter.contact < 63.0:
+    if batter.contact < 60.0:
         effective_contact = max(40.0, batter.contact)
-        diff = 63.0 - effective_contact
+        diff = 60.0 - effective_contact
         contact_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
     power_penalty = 0.0
@@ -650,22 +651,50 @@ def at_bat_probabilities(batter, pitcher, game_outs):
 
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
+    quality_delta = quality - 60.0
 
+    # ====================================================
+    # 【ステップ1】 三振・四球・インプレー（バットに当たる）の判定
+    # ====================================================
     walk_bonus = 0.0
-    if batter.power > 50.0:
-        walk_bonus += (batter.power - 50.0) * 0.0012
-    if batter.contact > 50.0:
-        walk_bonus += (batter.contact - 50.0) * 0.0006
-    if batter.power >= 80.0:
-        walk_bonus += (batter.power - 80.0) * 0.0015
+    if batter.power > 50.0: walk_bonus += (batter.power - 50.0) * 0.0012
+    if batter.contact > 50.0: walk_bonus += (batter.contact - 50.0) * 0.0006
+    if batter.power >= 80.0: walk_bonus += (batter.power - 80.0) * 0.0015
 
+    # 基礎確率 (全体を100%とした時の割合)
+    base_walk = 0.082
+    base_so = 0.220
+
+    walk = base_walk - (control_diff * 0.0012) + walk_bonus
+    so = base_so - (raw_contact_diff * 0.0008) + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff + (quality_delta * 0.0045)
+
+    if fatigue < 1.0:
+        walk += (1.0 - fatigue) * 0.02
+        so -= (1.0 - fatigue) * 0.03
+
+    walk = clamp(walk, 0.015, 0.25)
+    so = clamp(so, 0.05, 0.45)
+    
+    # 三振でも四球でもない＝バットに当たってグラウンドに飛ぶ
+    in_play = max(0.20, 1.0 - (walk + so))
+
+    total_step1 = walk + so + in_play
+    step1_probs = [
+        ("walk", walk / total_step1),
+        ("so", so / total_step1),
+        ("in_play", in_play / total_step1)
+    ]
+
+    # ====================================================
+    # 【ステップ2】 インプレーだった場合、どんな打球になるか
+    # ====================================================
     eff_contact = batter.contact
     eff_power = batter.power
     total_cp = eff_contact + eff_power
     if total_cp > 141.0:
         excess = total_cp - 141.0
-        eff_contact -= (excess * (eff_contact / total_cp)) * 0.70
-        eff_power -= (excess * (eff_power / total_cp)) * 0.70
+        eff_contact -= (excess * (eff_contact / total_cp)) * 0.90
+        eff_power -= (excess * (eff_power / total_cp)) * 0.90
 
     hit_contact_diff = eff_contact - quality
     hit_power_diff = eff_power - quality
@@ -681,59 +710,77 @@ def at_bat_probabilities(batter, pitcher, game_outs):
             diff_over_80 = eff_power - 80.0
             hr_bonus = base_bonus_at_80 + (diff_over_80 * 0.0006)
 
-    single = BASE_PA["single"] + hit_contact_diff * 0.0015 - (contact_penalty * 0.0010) - variety_debuff
-    double = BASE_PA["double"] + hit_contact_diff * 0.00015 + hit_power_diff * 0.00025 - ((contact_penalty + power_penalty) * 0.0002) - (variety_debuff * 0.5)
-    triple = BASE_PA["triple"] + batter.speed * 0.00006
-    
-    hr = BASE_PA["hr"] + hit_power_diff * 0.0004 - (power_penalty * 0.0012) + hr_bonus - (variety_debuff * 0.5)
-    
-    single -= hr_bonus * 0.75
-    double -= hr_bonus * 0.25
-    
-    walk = BASE_PA["walk"] - control_diff * 0.0012 + walk_bonus
-    so = BASE_PA["so"] - raw_contact_diff * 0.0008 + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff
+    # インプレー時の打球割合のベース (合計1.0)
+    base_in_play_single = 0.229  
+    base_in_play_double = 0.069  
+    base_in_play_triple = 0.006  
+    base_in_play_hr = 0.026      
 
-    quality_delta = quality - 60.0
-    single -= quality_delta * 0.00045
-    double -= quality_delta * 0.00025
-    hr -= quality_delta * 0.00030
-    so += quality_delta * 0.0045
+    single = base_in_play_single + (hit_contact_diff * 0.002) - (contact_penalty * 0.0015) - variety_debuff
+    double = base_in_play_double + (hit_contact_diff * 0.0002) + (hit_power_diff * 0.0003) - ((contact_penalty + power_penalty) * 0.0003)
+    triple = base_in_play_triple + (batter.speed * 0.00008)
+    hr = base_in_play_hr + (hit_power_diff * 0.0006) - (power_penalty * 0.0015) + (hr_bonus * 1.4)
+
+    # パワーによる単打減・長打増の補正
+    single -= hr_bonus * 1.0
+    double -= hr_bonus * 0.3
+
+    # 投手の球質によるヒット削減
+    single -= quality_delta * 0.0006
+    double -= quality_delta * 0.0003
+    hr -= quality_delta * 0.0004
 
     if fatigue < 1.0:
-        single += (1.0 - fatigue) * 0.03
-        hr += (1.0 - fatigue) * 0.015
-        walk += (1.0 - fatigue) * 0.02
-        so -= (1.0 - fatigue) * 0.03
+        single += (1.0 - fatigue) * 0.04
+        hr += (1.0 - fatigue) * 0.02
 
-    single = clamp(single, 0.01, 0.30)
-    double = clamp(double, 0.002, 0.12)
-    triple = clamp(triple, 0.001, 0.03)
-    hr = clamp(hr, 0.001, 0.09)
-    walk = clamp(walk, 0.015, 0.25)
-    so = clamp(so, 0.05, 0.45)
+    single = clamp(single, 0.05, 0.50)
+    double = clamp(double, 0.005, 0.20)
+    triple = clamp(triple, 0.001, 0.05)
+    hr = clamp(hr, 0.001, 0.25)
 
-    used = single + double + triple + hr + walk + so
-    out = max(0.02, 1.0 - used)
-    total = single + double + triple + hr + walk + so + out
-
-    probs = [
-        ("single", single / total),
-        ("double", double / total),
-        ("triple", triple / total),
-        ("hr", hr / total),
-        ("walk", walk / total),
-        ("so", so / total),
-        ("out", out / total),
+    hit_sum = single + double + triple + hr
+    out_in_play = max(0.10, 1.0 - hit_sum)
+    
+    total_step2 = hit_sum + out_in_play
+    step2_probs = [
+        ("single", single / total_step2),
+        ("double", double / total_step2),
+        ("triple", triple / total_step2),
+        ("hr", hr / total_step2),
+        ("out", out_in_play / total_step2)
     ]
-    return probs, pitch_name
 
-def choose_result(probs):
-    r = random.random()
-    cumulative = 0.0
-    for result, prob in probs:
-        cumulative += prob
-        if r <= cumulative:
+    # 両方の確率をセットで返す
+    return (step1_probs, step2_probs), pitch_name
+
+def choose_result(probs_tuple):
+    step1_probs, step2_probs = probs_tuple
+    
+    # --- 第1段階：三振・四球・インプレーのサイコロを振る ---
+    r1 = random.random()
+    cumulative1 = 0.0
+    step1_result = "in_play"
+    
+    for result, prob in step1_probs:
+        cumulative1 += prob
+        if r1 <= cumulative1:
+            step1_result = result
+            break
+            
+    # 三振か四球なら、ここで打席終了
+    if step1_result in ("so", "walk"):
+        return step1_result
+        
+    # --- 第2段階：バットに当たった場合、どんな打球かのサイコロを振る ---
+    r2 = random.random()
+    cumulative2 = 0.0
+    
+    for result, prob in step2_probs:
+        cumulative2 += prob
+        if r2 <= cumulative2:
             return result
+            
     return "out"
 
 # ============================================================
