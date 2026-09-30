@@ -638,9 +638,9 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     control_diff = pitcher.control - 50.0
 
     contact_penalty = 0.0
-    if batter.contact < 60.0:
+    if batter.contact < 45.0:
         effective_contact = max(40.0, batter.contact)
-        diff = 60.0 - effective_contact
+        diff = 45.0 - effective_contact
         contact_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
     power_penalty = 0.0
@@ -693,19 +693,19 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     total_cp = eff_contact + eff_power
     if total_cp > 141.0:
         excess = total_cp - 141.0
-        eff_contact -= (excess * (eff_contact / total_cp)) * 0.90
-        eff_power -= (excess * (eff_power / total_cp)) * 0.90
+        eff_contact -= (excess * (eff_contact / total_cp)) * 0.50
+        eff_power -= (excess * (eff_power / total_cp)) * 0.50
 
     hit_contact_diff = eff_contact - quality
     hit_power_diff = eff_power - quality
 
     hr_bonus = 0.0
-    if eff_power >= 58.0:
+    if eff_power >= 65.0:
         if eff_power < 80.0:
-            diff_58 = eff_power - 58.0
+            diff_58 = eff_power - 65.0
             hr_bonus = (diff_58 * 0.0005) + ((diff_58 ** 2) * 0.00006)
         else:
-            diff_to_80 = 80.0 - 58.0
+            diff_to_80 = 80.0 - 65.0
             base_bonus_at_80 = (diff_to_80 * 0.0005) + ((diff_to_80 ** 2) * 0.00006)
             diff_over_80 = eff_power - 80.0
             hr_bonus = base_bonus_at_80 + (diff_over_80 * 0.0006)
