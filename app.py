@@ -100,6 +100,7 @@ class Player:
     defense: dict = field(default_factory=dict)
     control: float = 0.0
     stamina: float = 0.0
+    pitch_power_base: float = 0.0  # 新設された「球威」
     pitches: dict = field(default_factory=dict)
     batting: BatterStats = field(default_factory=BatterStats)
     pitching: PitcherStats = field(default_factory=PitcherStats)
@@ -142,20 +143,6 @@ def parse_defense(text):
         except ValueError: pass
     return result
 
-def parse_pitches(text):
-    result = {}
-    if pd.isna(text): return result
-    for part in str(text).split(" / "):
-        part = part.strip()
-        if ":" not in part: continue
-        name, data = part.split(":", 1)
-        name = name.strip()
-        try:
-            c_str, p_str = data.split("/")
-            result[name] = {"control": float(c_str.strip()), "power": float(p_str.strip())}
-        except ValueError: pass
-    return result
-
 def require_columns(df, columns, label):
     missing = [c for c in columns if c not in df.columns]
     if missing: raise ValueError(f"{label}に必要な列がありません: {', '.join(missing)}")
@@ -165,8 +152,9 @@ def load_fielders(source):
     require_columns(df, ["選手名", "チーム", "ミート", "パワー", "走力", "守備力"], "野手ファイル")
     players = []
     for _, row in df.iterrows():
+        name_val = row.get("選手名_出力", row.get("選手名", "不明"))
         players.append(Player(
-            name=str(row["選手名"]).strip(), team=str(row["チーム"]).strip(),
+            name=str(name_val).strip(), team=str(row["チーム"]).strip(),
             contact=clean_number(row["ミート"]), power=clean_number(row["パワー"]),
             speed=clean_number(row["走力"]), defense=parse_defense(row["守備力"])
         ))
@@ -174,13 +162,29 @@ def load_fielders(source):
 
 def load_pitchers(source):
     df = pd.read_excel(source)
-    require_columns(df, ["選手名", "チーム", "制球", "スタミナ", "球種データ"], "投手ファイル")
+    require_columns(df, ["チーム", "球威", "制球", "スタミナ"], "投手ファイル")
+    
+    pitch_cols = [c for c in df.columns if str(c).startswith("球種_")]
+    
     players = []
     for _, row in df.iterrows():
+        name_val = row.get("選手名_出力", row.get("選手名", "不明"))
+        
+        # 新しい構造：各「球種_XXX」列から直接数値を抽出
+        pitches = {}
+        for c in pitch_cols:
+            val = row[c]
+            if pd.notna(val):
+                pitch_name = c.replace("球種_", "")
+                pitches[pitch_name] = float(val)
+                
         p = Player(
-            name=str(row["選手名"]).strip(), team=str(row["チーム"]).strip(),
-            control=clean_number(row["制球"]), stamina=clean_number(row["スタミナ"]),
-            pitches=parse_pitches(row["球種データ"])
+            name=str(name_val).strip(),
+            team=str(row["チーム"]).strip(),
+            control=clean_number(row["制球"]),
+            stamina=clean_number(row["スタミナ"]),
+            pitch_power_base=clean_number(row["球威"]),
+            pitches=pitches
         )
         p.current_stamina = p.stamina
         players.append(p)
@@ -334,9 +338,8 @@ def val_to_rank(val):
 
 def count_pitches_of_rank(pitcher, ranks):
     count = 0
-    for p_data in pitcher.pitches.values():
-        avg_val = (p_data["control"] + p_data["power"]) / 2.0
-        r_str = val_to_rank(avg_val)[0]
+    for val in pitcher.pitches.values():
+        r_str = val_to_rank(val)[0]
         if r_str in ranks:
             count += 1
     return count
@@ -477,11 +480,7 @@ def choose_pitch(pitcher):
     if not pitcher.pitches:
         return None
     names = list(pitcher.pitches.keys())
-    weights = []
-    for n in names:
-        avg_val = (pitcher.pitches[n]["control"] + pitcher.pitches[n]["power"]) / 2.0
-        rank = val_to_rank(avg_val)[0]
-        weights.append(RANK_WEIGHT.get(rank, 0.8))
+    weights = [max(1.0, pitcher.pitches[n]) for n in names]
     return random.choices(names, weights=weights, k=1)[0]
 
 def fatigue_factor(pitcher, game_outs):
@@ -494,19 +493,15 @@ def fatigue_factor(pitcher, game_outs):
 
 def at_bat_probabilities(batter, pitcher, game_outs):
     pitch_name = choose_pitch(pitcher)
-    if pitch_name and pitch_name in pitcher.pitches:
-        p_ctrl = pitcher.pitches[pitch_name]["control"]
-        p_pow = pitcher.pitches[pitch_name]["power"]
-    else:
-        p_ctrl = 50.0
-        p_pow = 50.0
+    pitch_quality = pitcher.pitches.get(pitch_name, 50.0) if pitch_name else 50.0
+    
+    p_pow = getattr(pitcher, 'pitch_power_base', 50.0)
+    p_ctrl = pitcher.control
 
-    # 三振: 球種球威8割、投手制球2割
-    so_quality = (p_pow * 0.8) + (pitcher.control * 0.2) + 10.0
-    # 四球: 球種制球7割、投手制球3割
-    bb_quality = (p_ctrl * 0.7) + (pitcher.control * 0.3) + 10.0
-    # 凡打(インプレー): 球種制球2割、球種球威5割、投手制球3割
-    batted_quality = (p_ctrl * 0.2) + (p_pow * 0.5) + (pitcher.control * 0.3) + 10.0
+    # ▼ 新しいデータ構造に基づく計算 (球威・制球・球種ランクの融合)
+    so_quality = (pitch_quality * 0.4) + (p_pow * 0.4) + (p_ctrl * 0.2) + 5.0
+    bb_quality = (p_ctrl * 0.8) + (pitch_quality * 0.2) + 5.0
+    batted_quality = (p_pow * 0.4) + (pitch_quality * 0.4) + (p_ctrl * 0.2) + 5.0
 
     fatigue = fatigue_factor(pitcher, game_outs)
 
@@ -528,45 +523,41 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     pitch_variety = len(pitcher.pitches)
     variety_debuff = max(0, pitch_variety - 2) * 0.0015
 
-    # ====================================================
-    # 【ステップ1】 三振・四球・インプレーの判定
-    # ====================================================
     walk_bonus = 0.0
     if batter.power > 50.0: walk_bonus += (batter.power - 50.0) * 0.0012
     if batter.contact > 50.0: walk_bonus += (batter.contact - 50.0) * 0.0006
     if batter.power >= 80.0: walk_bonus += (batter.power - 80.0) * 0.0015
 
-    base_walk = 0.075
-    base_so = 0.180
+    # ====================================================
+    # 【ステップ1】 投手成績を良くするための調整 (四球減・三振増)
+    # ====================================================
+    base_walk = 0.055  
+    base_so = 0.225    
 
-    walk = base_walk - (bb_diff * 0.0012) + walk_bonus
+    walk = base_walk - (bb_diff * 0.0015) + walk_bonus
     so_quality_delta = so_quality - 60.0
-    so = base_so - (raw_contact_diff * 0.0008) + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff + (so_quality_delta * 0.0045)
+    so = base_so - (raw_contact_diff * 0.0008) + (contact_penalty * 0.0015) + (power_penalty * 0.0008) + variety_debuff + (so_quality_delta * 0.0055)
 
     if fatigue < 1.0:
         walk += (1.0 - fatigue) * 0.02
         so -= (1.0 - fatigue) * 0.03
 
-    walk = clamp(walk, 0.015, 0.25)
+    walk = clamp(walk, 0.010, 0.20)
     so = clamp(so, 0.05, 0.45)
-    
     in_play = max(0.20, 1.0 - (walk + so))
+    
     total_step1 = walk + so + in_play
-    step1_probs = [
-        ("walk", walk / total_step1),
-        ("so", so / total_step1),
-        ("in_play", in_play / total_step1)
-    ]
+    step1_probs = [("walk", walk / total_step1), ("so", so / total_step1), ("in_play", in_play / total_step1)]
 
     # ====================================================
-    # 【ステップ2】 インプレー時の打球判定
+    # 【ステップ2】 打撃成績を良くするための調整 (ヒット率アップ)
     # ====================================================
     eff_contact = batter.contact
     eff_power = batter.power
 
     if eff_contact > 65.0:
         excess_contact = eff_contact - 65.0
-        eff_contact = 65.0 + (excess_contact * 0.4)
+        eff_contact = 65.0 + (excess_contact * 0.45)
 
     total_cp = eff_contact + eff_power
     if total_cp > 141.0:
@@ -589,12 +580,12 @@ def at_bat_probabilities(batter, pitcher, game_outs):
             diff_over_80 = eff_power - 80.0
             hr_bonus = base_bonus_at_80 + (diff_over_80 * 0.0006)
 
-    base_in_play_single = 0.265  
-    base_in_play_double = 0.075  
+    base_in_play_single = 0.275  
+    base_in_play_double = 0.080  
     base_in_play_triple = 0.006  
     base_in_play_hr = 0.026      
 
-    single = base_in_play_single + (hit_contact_diff * 0.002) - (contact_penalty * 0.0015) - variety_debuff
+    single = base_in_play_single + (hit_contact_diff * 0.0025) - (contact_penalty * 0.0015) - variety_debuff
     double = base_in_play_double + (hit_contact_diff * 0.0002) + (hit_power_diff * 0.0003) - ((contact_penalty + power_penalty) * 0.0003)
     triple = base_in_play_triple + (batter.speed * 0.00008)
     hr = base_in_play_hr + (hit_power_diff * 0.0006) - (power_penalty * 0.0015) + (hr_bonus * 1.4)
@@ -602,9 +593,9 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     single -= hr_bonus * 1.0
     double -= hr_bonus * 0.3
 
-    single -= batted_quality_delta * 0.0006
-    double -= batted_quality_delta * 0.0003
-    hr -= batted_quality_delta * 0.0004
+    single -= batted_quality_delta * 0.0005
+    double -= batted_quality_delta * 0.00025
+    hr -= batted_quality_delta * 0.0003
 
     if fatigue < 1.0:
         single += (1.0 - fatigue) * 0.04
@@ -619,13 +610,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     out_in_play = max(0.10, 1.0 - hit_sum)
     
     total_step2 = hit_sum + out_in_play
-    step2_probs = [
-        ("single", single / total_step2),
-        ("double", double / total_step2),
-        ("triple", triple / total_step2),
-        ("hr", hr / total_step2),
-        ("out", out_in_play / total_step2)
-    ]
+    step2_probs = [("single", single / total_step2), ("double", double / total_step2), ("triple", triple / total_step2), ("hr", hr / total_step2), ("out", out_in_play / total_step2)]
 
     return (step1_probs, step2_probs), pitch_name
 
@@ -1289,12 +1274,14 @@ def render_test_simulator(fielders_base, pitchers_base):
                 p.speed = max(1.0, p.speed - 2.0)
                 p.control = max(1.0, p.control - 2.0)
                 p.stamina = max(1.0, p.stamina - 2.0)
+                p.pitch_power_base = max(1.0, getattr(p, "pitch_power_base", 50.0) - 2.0)
             elif p.team == "阪神":
                 p.contact = max(1.0, p.contact - 2.0)
                 p.power = max(1.0, p.power - 2.0)
                 p.speed = max(1.0, p.speed - 1.0)
                 p.control = max(1.0, p.control - 2.0)
                 p.stamina = max(1.0, p.stamina - 2.0)
+                p.pitch_power_base = max(1.0, getattr(p, "pitch_power_base", 50.0) - 2.0)
                 
         opp_teams = build_teams(comp_fielders, comp_pitchers)
         available_opp_names = [t for t in opp_teams.keys() if t not in exclude_teams]
@@ -1586,7 +1573,7 @@ def draft_page(kind, all_players, count, skip_limit=None):
         max_def = max(candidate.defense.values()) if candidate.defense else 0
         stats = [("ミート", candidate.contact), ("パワー", candidate.power), ("走力", candidate.speed), ("守備力", max_def)]
     else:
-        stats = [("制球", candidate.control), ("スタミナ", candidate.stamina)]
+        stats = [("球威", getattr(candidate, "pitch_power_base", 50.0)), ("制球", candidate.control), ("スタミナ", candidate.stamina)]
         
     for label, val in stats:
         rank_str, color = val_to_rank(val)
@@ -1602,9 +1589,8 @@ def draft_page(kind, all_players, count, skip_limit=None):
         card_html += '</div>'
     else:
         card_html += '<div class="pos-list">球種：'
-        for p_name, p_data in candidate.pitches.items():
-            avg_val = (p_data["control"] + p_data["power"]) / 2.0
-            r_str, _ = val_to_rank(avg_val)
+        for p_name, val in candidate.pitches.items():
+            r_str, _ = val_to_rank(val)
             card_html += f'<span class="pos-badge">{p_name} {r_str}</span>'
         card_html += '</div>'
         
@@ -1733,7 +1719,7 @@ def pitching_page(pitchers):
     for p in pitchers:
         with st.container():
             c1, c2 = st.columns([3, 1])
-            with c1: st.markdown(f'<div style="padding-top: 5px;"><span style="font-size: 18px; font-weight: 900; color: #111;">{p.name}</span><br><span style="font-size: 13px; color: #777;">{p.team}所属・制球 {int(p.control)}・スタミナ {int(p.stamina)}</span></div>', unsafe_allow_html=True)
+            with c1: st.markdown(f'<div style="padding-top: 5px;"><span style="font-size: 18px; font-weight: 900; color: #111;">{p.name}</span><br><span style="font-size: 13px; color: #777;">{p.team}所属・球威 {int(p.pitch_power_base)}・制球 {int(p.control)}・スタミナ {int(p.stamina)}</span></div>', unsafe_allow_html=True)
             with c2:
                 current_role = st.session_state.pitcher_roles.get(p.name, "僅差")
                 idx = role_options.index(current_role) if current_role in role_options else 2
@@ -1883,19 +1869,19 @@ else:
         pitching_rows = []
         for i, p in enumerate(st.session_state.my_staff["starters"], start=1):
             pitching_rows.append({
-                "役割": f"先発{i}", "選手": p.name, "制球": p.control, "スタミナ": p.stamina,
-                "球種": " / ".join(f"{n}:{val_to_rank((d['control']+d['power'])/2.0)[0]}" for n, d in p.pitches.items()),
+                "役割": f"先発{i}", "選手": p.name, "球威": p.pitch_power_base, "制球": p.control, "スタミナ": p.stamina,
+                "球種": " / ".join(f"{n}:{val_to_rank(v)[0]}" for n, v in p.pitches.items()),
             })
         for i, p in enumerate(st.session_state.my_staff["bullpen"], start=1):
             pitching_rows.append({
                 "役割": st.session_state.my_staff.get("bullpen_roles", {}).get(id(p), "中継ぎ"),
-                "選手": p.name, "制球": p.control, "スタミナ": p.stamina,
-                "球種": " / ".join(f"{n}:{val_to_rank((d['control']+d['power'])/2.0)[0]}" for n, d in p.pitches.items()),
+                "選手": p.name, "球威": p.pitch_power_base, "制球": p.control, "スタミナ": p.stamina,
+                "球種": " / ".join(f"{n}:{val_to_rank(v)[0]}" for n, v in p.pitches.items()),
             })
         p = st.session_state.my_staff["closer"]
         pitching_rows.append({
-            "役割": "抑え", "選手": p.name if p else "-", "制球": p.control if p else 0, "スタミナ": p.stamina if p else 0,
-            "球種": " / ".join(f"{n}:{val_to_rank((d['control']+d['power'])/2.0)[0]}" for n, d in p.pitches.items()) if p else "",
+            "役割": "抑え", "選手": p.name if p else "-", "球威": p.pitch_power_base if p else 0, "制球": p.control if p else 0, "スタミナ": p.stamina if p else 0,
+            "球種": " / ".join(f"{n}:{val_to_rank(v)[0]}" for n, v in p.pitches.items()) if p else "",
         })
         st.dataframe(pd.DataFrame(pitching_rows), hide_index=True, use_container_width=True)
 
@@ -1926,10 +1912,10 @@ else:
         for t_name, team_obj in teams.items():
             if t_name == "ソフトバンク":
                 for p in team_obj.fielders: p.contact = max(1.0, p.contact - 3.0); p.power = max(1.0, p.power - 3.0); p.speed = max(1.0, p.speed - 2.0)
-                for p in team_obj.pitchers: p.control = max(1.0, p.control - 3.0); p.stamina = max(1.0, p.stamina - 3.0)
+                for p in team_obj.pitchers: p.control = max(1.0, p.control - 3.0); p.stamina = max(1.0, p.stamina - 3.0); p.pitch_power_base = max(1.0, getattr(p, "pitch_power_base", 50.0) - 3.0)
             elif t_name == "阪神":
                 for p in team_obj.fielders: p.contact = max(1.0, p.contact - 2.0); p.power = max(1.0, p.power - 2.0); p.speed = max(1.0, p.speed - 1.0)
-                for p in team_obj.pitchers: p.control = max(1.0, p.control - 2.0); p.stamina = max(1.0, p.stamina - 2.0)
+                for p in team_obj.pitchers: p.control = max(1.0, p.control - 2.0); p.stamina = max(1.0, p.stamina - 2.0); p.pitch_power_base = max(1.0, getattr(p, "pitch_power_base", 50.0) - 2.0)
                     
         all_sim_players = list(fielders_all) + list(pitchers_all)
         all_sim_players.extend([p for p, _ in st.session_state.my_lineup])
