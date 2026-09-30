@@ -423,7 +423,7 @@ def best_lineup_for_team(team, dh=True):
     return lineup
 
 # ============================================================
-# 他球団 固定投手起用定義（追加）
+# 他球団 固定投手起用定義
 # ============================================================
 OPPONENT_PITCHERS = {
     "阪神": {
@@ -537,7 +537,6 @@ OPPONENT_PITCHERS = {
 }
 
 def best_pitching_staff(team):
-    # 1. 指定の固定投手陣がある場合はそれを優先
     if team.name in OPPONENT_PITCHERS:
         target = OPPONENT_PITCHERS[team.name]
         starters = []
@@ -545,11 +544,11 @@ def best_pitching_staff(team):
         closer = None
         bullpen_roles = {}
         
-        # スペースの有無を無視して選手を探すヘルパー関数
+        # ★名前の全角・半角スペース、中点(・)をすべて無視して照合する最強のヘルパー
         def get_p(name):
-            clean_name = name.replace(" ", "").replace("・", "")
+            c_name = str(name).replace(" ", "").replace(" ", "").replace("・", "")
             for p in team.pitchers:
-                if p.name.replace(" ", "").replace("・", "") == clean_name:
+                if p.name.replace(" ", "").replace(" ", "").replace("・", "") == c_name:
                     return p
             return None
 
@@ -570,7 +569,6 @@ def best_pitching_staff(team):
                     bullpen.append(player)
                     bullpen_roles[id(player)] = role
                     
-        # 万が一Excelに選手が存在しない場合の安全対策（自動穴埋め）
         used_ids = set([id(p) for p in starters + bullpen + ([closer] if closer else [])])
         remain = [p for p in team.pitchers if id(p) not in used_ids]
         remain.sort(key=lambda x: x.stamina, reverse=True)
@@ -578,12 +576,12 @@ def best_pitching_staff(team):
         while len(starters) < 6 and remain:
             starters.append(remain.pop(0))
         if not closer and remain:
-            remain.sort(key=lambda x: x.control, reverse=True) # 抑え候補は制球重視で補充
+            remain.sort(key=lambda x: x.control, reverse=True)
             closer = remain.pop(0)
         while remain:
             p = remain.pop(0)
             bullpen.append(p)
-            bullpen_roles[id(p)] = "敗戦処理" # 余りはとりあえず敗戦処理
+            bullpen_roles[id(p)] = "敗戦処理"
             
         return {
             "starters": starters,
@@ -592,14 +590,12 @@ def best_pitching_staff(team):
             "bullpen_roles": bullpen_roles,
         }
 
-    # 2. 定義がない場合（マイチーム等）は元々の自動最適化ロジックを実行
     roles = decide_pitcher_roles(team.pitchers)
     starters = [p for p in team.pitchers if roles.get(p.name) == "先発"]
     closer_list = [p for p in team.pitchers if roles.get(p.name) == "抑え"]
     closer = closer_list[0] if closer_list else None
     bullpen = [p for p in team.pitchers if roles.get(p.name) not in ("先発", "抑え")]
     bullpen_roles = {id(p): roles.get(p.name) for p in bullpen}
-    
     return { "starters": starters, "bullpen": bullpen, "closer": closer, "bullpen_roles": bullpen_roles }
 
 def build_opponent_team(team, dh):
