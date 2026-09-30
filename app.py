@@ -690,6 +690,13 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     # ====================================================
     eff_contact = batter.contact
     eff_power = batter.power
+    # ▼ 新規追加：ミート65を超える上位打者の「打率インフレ」を防ぐ補正
+    if eff_contact > 65.0:
+        excess_contact = eff_contact - 65.0
+        # 65を超えた分のステータス効果を「40%」に圧縮する
+        # （例：ミート80の場合、15オーバーなので実質ミート71としてヒット判定される）
+        eff_contact = 65.0 + (excess_contact * 0.4)
+        
     total_cp = eff_contact + eff_power
     if total_cp > 141.0:
         excess = total_cp - 141.0
