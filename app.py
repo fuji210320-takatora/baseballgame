@@ -900,7 +900,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     # 【ステップ1】 投手成績を良くするための調整 (四球減・三振増)
     # ====================================================
     base_walk = 0.055  
-    base_so = 0.225    
+    base_so = 0.185    
 
     walk = base_walk - (bb_diff * 0.0015) + walk_bonus
     so_quality_delta = so_quality - 60.0
