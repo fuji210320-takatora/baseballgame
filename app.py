@@ -1007,8 +1007,12 @@ def choose_result(probs_tuple):
 # 守備・UZR
 # ============================================================
 def choose_batted_ball_position(defense):
-    positions = ["1B", "2B", "3B", "SS", "LF", "CF", "RF"]
-    weights = [1.0, 1.1, 1.0, 1.2, 0.9, 1.0, 0.9]
+    # ▼ キャッチャー(C)への打球（ファウルフライやバント処理など）を追加！
+    positions = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"]
+    
+    # ▼ ご指定いただいた超リアルな打球割合（合計 1.00）
+    weights = [0.01, 0.10, 0.18, 0.10, 0.19, 0.13, 0.16, 0.13]
+    
     pos = random.choices(positions, weights=weights, k=1)[0]
     defender = defense.get(pos)
     return pos, defender
