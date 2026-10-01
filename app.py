@@ -1329,7 +1329,7 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
             if len(offense_op) == 8: offense_op.append((op_pitcher, "P"))
 
         if my_pitcher:
-            r_op, hrs_op = simulate_half_inning([p for p, _ in offense_op], op_batting_index, my_pitcher, defense_my, league, inning=inning, top_bottom="表", game_state=op_game_state, bench_player=op_bench)
+            r_op, hrs_op = simulate_half_inning(offense_op, op_batting_index, my_pitcher, defense_my, league, inning=inning, top_bottom="表", game_state=op_game_state, bench_player=op_bench)
         else:
             r_op, hrs_op = 0, []
             
@@ -1364,7 +1364,7 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
             if len(offense_my) == 8: offense_my.append((my_pitcher, "P"))
 
         if op_pitcher:
-            r_my, hrs_my = simulate_half_inning([p for p, _ in offense_my], my_batting_index, op_pitcher, defense_op, league, inning=inning, top_bottom="裏", game_state=my_game_state, bench_player=my_bench)
+            r_my, hrs_my = simulate_half_inning(offense_my, my_batting_index, op_pitcher, defense_op, league, inning=inning, top_bottom="裏", game_state=my_game_state, bench_player=my_bench)
         else:
             r_my, hrs_my = 0, []
             
