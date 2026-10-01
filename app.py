@@ -2321,6 +2321,54 @@ def render_clone_pennant(fielders_base):
                 
             df_std = pd.DataFrame(standings)[["チーム", "勝", "敗", "分", "勝率", "ゲーム差", "得点", "失点", "打率", "本塁打", "失策", "捕逸"]]
             st.dataframe(df_std, hide_index=True, use_container_width=True)
+            # --- 以下を追加：個人成績（HTMLカード）の表示 ---
+            st.markdown("---")
+            st.subheader("👤 個人成績（ポジション別・クローン9人）")
+            
+            selected_team_name = st.selectbox("成績を見るチームを選択", selected_names, key="clone_team_select")
+            
+            t_data = all_teams_data[selected_team_name]
+            batters_to_show = t_data["lineup"]
+            
+            # 本編と同じCSSを適用
+            st.markdown("""
+            <style>
+            .stats-container { background-color: #F8F7F5; padding: 5px; border-radius: 8px; margin-bottom: 10px; }
+            .stats-row { border-bottom: 1px solid #E5E5E5; padding: 20px 10px 15px; }
+            .stats-row:last-child { border-bottom: none; }
+            .player-hdr { display: flex; align-items: center; margin-bottom: 15px; }
+            .p-order { font-size: 18px; font-weight: bold; color: #A0A0A0; width: 25px; text-align: center; }
+            .p-icon { width: 34px; height: 34px; border-radius: 50%; color: white; display: flex; justify-content: center; align-items: center; font-size: 14px; font-weight: bold; margin: 0 15px 0 5px; }
+            .p-name-container { line-height: 1.2; }
+            .p-fullname { font-size: 18px; font-weight: 900; color: #111; }
+            .p-pos { font-size: 11px; color: #888; margin-top: 4px; }
+            .main-stats { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 15px; padding: 0 5px; }
+            .ms-item { display: flex; align-items: baseline; }
+            .ms-label { font-size: 11px; color: #888; margin-right: 5px; font-weight: bold; }
+            .ms-val { font-size: 24px; font-weight: 900; color: #111; }
+            .ms-val-small { font-size: 20px; font-weight: bold; color: #111; }
+            .sub-stats { display: flex; justify-content: space-between; background-color: #EFEFEF; padding: 10px 15px; border-radius: 4px; }
+            .ss-item { font-size: 11px; color: #777; }
+            .ss-item b { color: #333; font-size: 12px; margin-left: 4px; }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            html_bat = '<div class="stats-container">'
+            for i, (p, pos) in enumerate(batters_to_show, start=1):
+                icon_char, color, jp_pos = pos_icon(pos)
+                order_str = str(i)
+                avg_str, ops_str = fmt_pct(batting_avg(p)), fmt_pct(ops(p))
+                uzr = p.fielding.UZR
+                uzr_str = f"+{uzr:.1f}" if uzr > 0 else f"{uzr:.1f}"
+                if pos in ["DH"]: uzr_str = "－"
+                
+                # 捕手のみ捕逸を表示
+                pb_html = f'<div class="ss-item">捕逸<b>{getattr(p.fielding, "PB", 0)}</b></div>' if pos == "C" else ""
+                
+                html_bat += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{order_str}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{jp_pos}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">打率</span><span class="ms-val">{avg_str}</span></div><div class="ms-item"><span class="ms-label">本塁打</span><span class="ms-val-small">{p.batting.HR}</span></div><div class="ms-item"><span class="ms-label">打点</span><span class="ms-val-small">{p.batting.RBI}</span></div><div class="ms-item"><span class="ms-label">盗塁</span><span class="ms-val-small">{p.batting.SB}</span></div><div class="ms-item"><span class="ms-label">OPS</span><span class="ms-val">{ops_str}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.batting.G}</b></div><div class="ss-item">打席<b>{p.batting.PA}</b></div><div class="ss-item">打数<b>{p.batting.AB}</b></div><div class="ss-item">安打<b>{p.batting.H}</b></div><div class="ss-item">犠飛<b>{p.batting.SF}</b></div><div class="ss-item">UZR<b>{uzr_str}</b></div><div class="ss-item">失策<b>{p.fielding.E}</b></div>{pb_html}</div></div>'
+            html_bat += '</div>'
+            
+            st.markdown(html_bat, unsafe_allow_html=True)
 # ============================================================
 # メインアプリケーション実行
 # ============================================================
