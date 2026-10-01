@@ -2083,8 +2083,8 @@ else:
         my_league = st.session_state.my_league
         
         for t_name, team_obj in teams.items():
-            if t_name == "ソフトバンク":
-                for p in team_obj.fielders: p.contact = max(1.0, p.contact - 3.0); p.power = max(1.0, p.power - 3.0); p.speed = max(1.0, p.speed - 2.0)
+            if t_name == "日本ハム":
+                for p in team_obj.fielders: p.contact = max(1.0, p.contact - 6.0); p.power = max(1.0, p.power - 3.0); p.speed = max(1.0, p.speed - 2.0)
                 for p in team_obj.pitchers: p.control = max(1.0, p.control - 3.0); p.stamina = max(1.0, p.stamina - 3.0); p.pitch_power_base = max(1.0, getattr(p, "pitch_power_base", 50.0) - 3.0)
             elif t_name == "阪神":
                 for p in team_obj.fielders: p.contact = max(1.0, p.contact - 2.0); p.power = max(1.0, p.power - 2.0); p.speed = max(1.0, p.speed - 1.0)
