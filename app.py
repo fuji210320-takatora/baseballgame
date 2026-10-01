@@ -2189,8 +2189,19 @@ def render_clone_pennant(fielders_base):
     st.write("「全員が同じ野手」で構成されたチームを6つ作り、120試合のペナントレースを行います！")
     st.caption("※投手陣は全チーム共通の能力（先発オール60、リリーフ球威70等）の架空投手が自動で登板します。")
 
+    # ▼ 追加：結果を記憶しておくための設定
+    if "clone_results" not in st.session_state:
+        st.session_state.clone_results = None
+    if "clone_selected" not in st.session_state:
+        st.session_state.clone_selected = []
+
     all_names = sorted(list(set(p.name for p in fielders_base)))
     selected_names = st.multiselect("参戦させる選手を6人選んでください", options=all_names, max_selections=6)
+
+    # 選手を選び直したら記憶をリセットする
+    if set(selected_names) != set(st.session_state.clone_selected):
+        st.session_state.clone_results = None
+        st.session_state.clone_selected = selected_names
 
     if len(selected_names) == 6:
         if st.button("⚾ ペナントレース開幕！", type="primary", use_container_width=True):
@@ -2288,6 +2299,13 @@ def render_clone_pennant(fielders_base):
                     
             status.success("全日程（1リーグ360試合）が終了しました！")
             
+            # ▼ 追加：終わったデータを「記憶（session_state）」に保存する！
+            st.session_state.clone_results = all_teams_data
+
+        # ▼ 追加：ボタンの中（if文）から外に出し、「記憶」があれば常に表示する仕組みに変更
+        if st.session_state.clone_results is not None:
+            all_teams_data = st.session_state.clone_results
+            
             # --- 結果表示 ---
             st.subheader("🏆 クローンペナント 最終順位表")
             standings = []
@@ -2321,7 +2339,8 @@ def render_clone_pennant(fielders_base):
                 
             df_std = pd.DataFrame(standings)[["チーム", "勝", "敗", "分", "勝率", "ゲーム差", "得点", "失点", "打率", "本塁打", "失策", "捕逸"]]
             st.dataframe(df_std, hide_index=True, use_container_width=True)
-            # --- 以下を追加：個人成績（HTMLカード）の表示 ---
+
+            # --- 個人成績（HTMLカード）の表示 ---
             st.markdown("---")
             st.subheader("👤 個人成績（ポジション別・クローン9人）")
             
