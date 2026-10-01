@@ -2492,7 +2492,7 @@ else:
             uzr = p.fielding.UZR
             uzr_str = f"+{uzr:.1f}" if uzr > 0 else f"{uzr:.1f}"
             if pos in ["DH", "代打"]: uzr_str = "－"
-            html_bat += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{order_str}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{jp_pos}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">打率</span><span class="ms-val">{avg_str}</span></div><div class="ms-item"><span class="ms-label">本塁打</span><span class="ms-val-small">{p.batting.HR}</span></div><div class="ms-item"><span class="ms-label">打点</span><span class="ms-val-small">{p.batting.RBI}</span></div><div class="ms-item"><span class="ms-label">盗塁</span><span class="ms-val-small">{p.batting.SB}</span></div><div class="ms-item"><span class="ms-label">OPS</span><span class="ms-val">{ops_str}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.batting.G}</b></div><div class="ss-item">打席<b>{p.batting.PA}</b></div><div class="ss-item">打数<b>{p.batting.AB}</b></div><div class="ss-item">安打<b>{p.batting.H}</b></div><div class="ss-item">犠飛<b>{p.batting.SF}</b></div><div class="ss-item">UZR<b>{uzr_str}</b></div></div></div>'
+            html_bat += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{order_str}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{jp_pos}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">打率</span><span class="ms-val">{avg_str}</span></div><div class="ms-item"><span class="ms-label">本塁打</span><span class="ms-val-small">{p.batting.HR}</span></div><div class="ms-item"><span class="ms-label">打点</span><span class="ms-val-small">{p.batting.RBI}</span></div><div class="ms-item"><span class="ms-label">盗塁</span><span class="ms-val-small">{p.batting.SB}</span></div><div class="ms-item"><span class="ms-label">OPS</span><span class="ms-val">{ops_str}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.batting.G}</b></div><div class="ss-item">打席<b>{p.batting.PA}</b></div><div class="ss-item">打数<b>{p.batting.AB}</b></div><div class="ss-item">安打<b>{p.batting.H}</b></div><div class="ss-item">犠飛<b>{p.batting.SF}</b></div><div class="ss-item">UZR<b>{uzr_str}</b></div><div class="ss-item">失策<b>{p.fielding.E}</b></div></div></div>'
         html_bat += '</div>'
 
         html_pitch = '<div class="stats-container">'
@@ -2521,7 +2521,7 @@ else:
                     "試合": b.G, "打席": b.PA, "打数": b.AB, "得点": b.R, "安打": b.H, "二塁打": b.double, "三塁打": b.triple, "本塁打": b.HR,
                     "塁打": b.TB, "打点": b.RBI, "盗塁": b.SB, "盗塁死": b.CS, "四球": b.BB, "三振": b.SO, "犠飛": b.SF,
                     "出塁率": fmt_pct(obp(p)), "長打率": fmt_pct(slg(p)), "OPS": fmt_pct(ops(p)), "wRC+": round(calc_wrc_plus(p), 1),
-                    "UZR": round(p.fielding.UZR, 1) if pos not in ["DH", "代打"] else "-", "WAR": round(calc_batter_war(p, main_pos), 1)
+                    "UZR": round(p.fielding.UZR, 1) if pos not in ["DH", "代打"] else "-", "失策": p.fielding.E, "WAR": round(calc_batter_war(p, main_pos), 1)
                 })
             st.dataframe(pd.DataFrame(bat_df_data), hide_index=True, use_container_width=True)
 
