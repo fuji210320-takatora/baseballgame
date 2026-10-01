@@ -2336,6 +2336,18 @@ else:
             all_teams_data[t_name] = { "lineup": lineup, "staff": staff, "bench": bench, "games_played": 0, "wins": 0, "losses": 0, "draws": 0, "runs_for": 0, "runs_against": 0 }
 
         full_schedule = create_full_schedule(st.session_state.league_central, st.session_state.league_pacific)
+        
+        # ★追加：マイチームがどの球団と入れ替わったかを判定し、日程表を自動で書き換える
+        default_teams = ["阪神", "DeNA", "巨人", "ヤクルト", "中日", "広島", "日本ハム", "ロッテ", "楽天", "西武", "オリックス", "ソフトバンク"]
+        missing_teams = [t for t in default_teams if t not in all_participating_teams]
+        if "マイチーム" in all_participating_teams and missing_teams:
+            replaced_team = missing_teams[0]
+            for match in full_schedule:
+                if match["home"] == replaced_team:
+                    match["home"] = "マイチーム"
+                if match["away"] == replaced_team:
+                    match["away"] = "マイチーム"
+
         game_log = []
         progress = st.progress(0)
         status = st.empty()
