@@ -1204,7 +1204,12 @@ class PitchingState:
 
         pitches = p.game_pitches_today
         if p_id not in self.max_pitches:
-            limit = p.current_stamina * random.uniform(1.1, 1.3) + 20
+            # ▼ 追加：先発投手でスタミナが53以下の場合は、調子係数を厳しめに設定
+            if p in self.starters and p.current_stamina <= 53.0:
+                limit = p.current_stamina * random.uniform(0.8, 1.1) + 20
+            else:
+                limit = p.current_stamina * random.uniform(1.1, 1.3) + 20
+                
             if p not in self.starters: limit = min(limit, 45)
             self.max_pitches[p_id] = max(15, limit)
         max_limit = self.max_pitches[p_id]
