@@ -88,6 +88,7 @@ class FielderStats:
     PO: int = 0
     A: int = 0
     E: int = 0
+    PB: int = 0  # <--- 捕逸（パスボール）を追加
     UZR: float = 0.0
 
 @dataclass
@@ -1317,8 +1318,11 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
         if any(bases):
             catcher = defense.get("C")
             c_def = catcher.defense_at("C") if catcher else 30.0
-            pb_prob = clamp(0.015 - c_def * 0.00015, 0.001, 0.02)
-            wp_prob = clamp(0.012 - pitcher.control * 0.0001, 0.001, 0.02)
+            
+            # ▼ 暴投・パスボールの発生確率を現実のプロ野球レベル（約1/4）に低下
+            pb_prob = clamp(0.003 - c_def * 0.00003, 0.0005, 0.005)
+            wp_prob = clamp(0.004 - pitcher.control * 0.00004, 0.0005, 0.005)
+            
             if random.random() < (pb_prob + wp_prob):
                 new_bases = [None, None, None]
                 if bases[2] is not None:
@@ -1327,8 +1331,10 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                 if bases[1] is not None: new_bases[2] = bases[1]
                 if bases[0] is not None: new_bases[1] = bases[0]
                 bases = new_bases
+                
+                # パスボールの場合（失策とは分けて捕逸として記録）
                 if catcher and random.random() < pb_prob / (pb_prob + wp_prob):
-                    catcher.fielding.E += 1
+                    catcher.fielding.PB += 1
                     catcher.fielding.UZR -= 0.3
 
         # ▼ 代打起用と投手の打力固定ロジック
