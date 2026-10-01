@@ -2182,13 +2182,153 @@ def pitching_page(pitchers):
     return None
 
 # ============================================================
+# クローンペナントレース（サブゲーム）用関数
+# ============================================================
+def render_clone_pennant(fielders_base):
+    st.header("🧬 クローンチーム・ペナントレース")
+    st.write("「全員が同じ野手」で構成されたチームを6つ作り、120試合のペナントレースを行います！")
+    st.caption("※投手陣は全チーム共通の能力（先発オール60、リリーフ球威70等）の架空投手が自動で登板します。")
+
+    all_names = sorted(list(set(p.name for p in fielders_base)))
+    selected_names = st.multiselect("参戦させる選手を6人選んでください", options=all_names, max_selections=6)
+
+    if len(selected_names) == 6:
+        if st.button("⚾ ペナントレース開幕！", type="primary", use_container_width=True):
+            # --- チーム作成 ---
+            all_teams_data = {}
+            for name in selected_names:
+                base_p = next(p for p in fielders_base if p.name == name)
+                
+                # 9人のクローン野手を作成
+                lineup = []
+                positions = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH"]
+                for i, pos in enumerate(positions, 1):
+                    clone_p = copy.deepcopy(base_p)
+                    clone_p.name = f"{base_p.name}({pos})"
+                    clone_p.batting = BatterStats()
+                    clone_p.fielding = FielderStats()
+                    lineup.append((clone_p, pos))
+                    
+                # ご指定の投手陣を作成
+                starters, bullpen = [], []
+                bullpen_roles = {}
+                
+                def make_pitcher(role, idx):
+                    p = Player(name=f"{role}{idx}", team=f"{name}ズ")
+                    if role == "先発":
+                        p.pitch_power_base = 60; p.control = 60; p.stamina = 60
+                        p.pitches = {"フォーシーム": 65, "フォーク": 55, "スライダー": 55, "カーブ": 55}
+                    else:
+                        p.pitch_power_base = 70; p.control = 65; p.stamina = 40
+                        p.pitches = {"フォーシーム": 70, "フォーク": 55, "スライダー": 55, "カーブ": 55}
+                    p.current_stamina = p.stamina
+                    return p
+                    
+                for i in range(6): starters.append(make_pitcher("先発", i+1))
+                for i in range(8):
+                    bp = make_pitcher("中継ぎ", i+1)
+                    bullpen.append(bp)
+                    roles_dist = ["中継ぎエース", "僅差", "僅差", "リード", "リード", "ビハインド", "ビハインド", "敗戦処理"]
+                    bullpen_roles[id(bp)] = roles_dist[i]
+                closer = make_pitcher("抑え", 1)
+                
+                all_teams_data[name] = {
+                    "lineup": lineup,
+                    "staff": {"starters": starters, "bullpen": bullpen, "closer": closer, "bullpen_roles": bullpen_roles},
+                    "bench": None,
+                    "games_played": 0, "wins": 0, "losses": 0, "draws": 0,
+                    "runs_for": 0, "runs_against": 0
+                }
+            
+            # --- 日程作成（総当たり戦 各120試合） ---
+            schedule = []
+            for t1 in selected_names:
+                for t2 in selected_names:
+                    if t1 != t2:
+                        for _ in range(12): schedule.append({"home": t1, "away": t2, "league": "パ・リーグ"})
+            random.shuffle(schedule)
+            
+            progress = st.progress(0)
+            status = st.empty()
+            
+            # --- シミュレーション実行 ---
+            for idx, match in enumerate(schedule, 1):
+                h_team = all_teams_data[match["home"]]
+                a_team = all_teams_data[match["away"]]
+                
+                score_h, score_a, res = simulate_game(
+                    h_team["lineup"], h_team["staff"], a_team["lineup"], a_team["staff"], 
+                    match["league"], h_team["games_played"], a_team["games_played"]
+                )
+                
+                h_team["games_played"] += 1; a_team["games_played"] += 1
+                h_team["runs_for"] += score_h; h_team["runs_against"] += score_a
+                a_team["runs_for"] += score_a; a_team["runs_against"] += score_h
+                
+                if res["result"] == "W": h_team["wins"] += 1; a_team["losses"] += 1
+                elif res["result"] == "L": h_team["losses"] += 1; a_team["wins"] += 1
+                else: h_team["draws"] += 1; a_team["draws"] += 1
+                
+                for t in [h_team, a_team]:
+                    stf = t["staff"]
+                    for p in stf["starters"] + stf["bullpen"] + [stf["closer"]]:
+                        if getattr(p, 'did_pitch_today', False):
+                            p.current_stamina = max(0.0, p.current_stamina - p.game_pitches_today)
+                            p.consecutive_games += 1
+                        else:
+                            p.current_stamina = min(p.stamina, p.current_stamina + p.stamina / 5.0)
+                            p.consecutive_games = 0
+                        p.did_pitch_today = False
+                        p.game_pitches_today = 0
+                        p.force_continue_outs = 0
+                        
+                if idx % 10 == 0 or idx == len(schedule):
+                    progress.progress(idx / len(schedule))
+                    status.write(f"ペナントレース進行中... {idx}/{len(schedule)}試合終了")
+                    
+            status.success("全日程（1リーグ360試合）が終了しました！")
+            
+            # --- 結果表示 ---
+            st.subheader("🏆 クローンペナント 最終順位表")
+            standings = []
+            for name in selected_names:
+                d = all_teams_data[name]
+                w, l, dr = d["wins"], d["losses"], d["draws"]
+                pct = w / (w+l) if (w+l) > 0 else 0
+                
+                # クローン9人分の合計成績を算出
+                t_ab = sum(p.batting.AB for p, _ in d["lineup"])
+                t_h = sum(p.batting.H for p, _ in d["lineup"])
+                t_hr = sum(p.batting.HR for p, _ in d["lineup"])
+                t_e = sum(p.fielding.E for p, _ in d["lineup"])
+                t_pb = sum(getattr(p.fielding, 'PB', 0) for p, _ in d["lineup"])
+                t_avg = t_h / t_ab if t_ab > 0 else 0
+                
+                standings.append({
+                    "チーム": f"{name}ズ", "勝": w, "敗": l, "分": dr, "勝率": pct, "ゲーム差": "-",
+                    "得点": d["runs_for"], "失点": d["runs_against"], 
+                    "打率": f"{t_avg:.3f}".replace("0.", "."), "本塁打": t_hr, "失策": t_e, "捕逸": t_pb
+                })
+                
+            standings.sort(key=lambda x: x["勝率"], reverse=True)
+            
+            # ゲーム差の計算
+            top_w, top_l = standings[0]["勝"], standings[0]["敗"]
+            for row in standings:
+                gb = ((top_w - row["勝"]) + (row["敗"] - top_l)) / 2.0
+                row["ゲーム差"] = "－" if gb == 0 else f"{gb:.1f}"
+                row["勝率"] = f"{row['勝率']:.3f}".replace("0.", ".")
+                
+            df_std = pd.DataFrame(standings)[["チーム", "勝", "敗", "分", "勝率", "ゲーム差", "得点", "失点", "打率", "本塁打", "失策", "捕逸"]]
+            st.dataframe(df_std, hide_index=True, use_container_width=True)
+# ============================================================
 # メインアプリケーション実行
 # ============================================================
 st.title("⚾ 野球チームメーカー")
 
 with st.sidebar:
     st.header("モード選択")
-    app_mode = st.radio("機能を選んでください", ["チームメーカー（本編）", "能力値テスト（シミュレーター）"])
+    app_mode = st.radio("機能を選んでください", ["チームメーカー（本編）", "能力値テスト（シミュレーター）", "クローンペナント（サブゲーム）"])
     st.markdown("---")
     st.header("選手データ")
     st.write("GitHubリポジトリ内のExcelを自動読み込みします。")
@@ -2208,6 +2348,8 @@ st.sidebar.success(f"野手 {len(fielders_all)}人 / 投手 {len(pitchers_all)}�
 
 if app_mode == "能力値テスト（シミュレーター）":
     render_test_simulator(fielders_all, pitchers_all)
+elif app_mode == "クローンペナント（サブゲーム）":
+    render_clone_pennant(fielders_all)
 else:
     if "step" not in st.session_state: st.session_state.step = "start"
     st.session_state.teams = build_teams(fielders_all, pitchers_all)
