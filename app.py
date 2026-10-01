@@ -2150,13 +2150,15 @@ else:
         all_participating_teams = st.session_state.league_central + st.session_state.league_pacific
         for t_name in all_participating_teams:
             if t_name == "マイチーム":
-                lineup, staff = st.session_state.my_lineup, st.session_state.my_staff
+                lineup = st.session_state.my_lineup
+                staff = st.session_state.my_staff
+                bench = st.session_state.my_bench
             else:
                 team_obj = teams[t_name]
                 dh = (t_name in st.session_state.league_pacific)
-                lineup = best_lineup_for_team(team_obj, dh=dh)
+                lineup, bench = best_lineup_for_team(team_obj, dh=dh)
                 staff = best_pitching_staff(team_obj)
-            all_teams_data[t_name] = { "lineup": lineup, "staff": staff, "games_played": 0, "wins": 0, "losses": 0, "draws": 0, "runs_for": 0, "runs_against": 0 }
+            all_teams_data[t_name] = { "lineup": lineup, "staff": staff, "bench": bench, "games_played": 0, "wins": 0, "losses": 0, "draws": 0, "runs_for": 0, "runs_against": 0 }
 
         full_schedule = create_full_schedule(st.session_state.league_central, st.session_state.league_pacific)
         game_log = []
@@ -2166,7 +2168,7 @@ else:
         for idx, match in enumerate(full_schedule, start=1):
             h_name, a_name, league_rule = match["home"], match["away"], match["league"]
             h_team, a_team = all_teams_data[h_name], all_teams_data[a_name]
-            score_h, score_a, result = simulate_game(h_team["lineup"], h_team["staff"], a_team["lineup"], a_team["staff"], league_rule, h_team["games_played"], a_team["games_played"])
+            score_h, score_a, result = simulate_game(h_team["lineup"], h_team["staff"], a_team["lineup"], a_team["staff"], league_rule, h_team["games_played"], a_team["games_played"], my_bench=h_team["bench"], op_bench=a_team["bench"])
             
             h_team["games_played"] += 1; a_team["games_played"] += 1
             h_team["runs_for"] += score_h; h_team["runs_against"] += score_a
