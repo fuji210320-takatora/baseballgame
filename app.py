@@ -1352,8 +1352,12 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
             catcher = defense.get("C")
             c_def = catcher.defense_at("C") if catcher else 30.0
             
-            # ▼ 暴投・パスボールの発生確率を現実のプロ野球レベル（約1/4）に低下
-            pb_prob = clamp(0.003 - c_def * 0.00003, 0.0005, 0.005)
+            # ▼ 追加：キャッチャー適性なし（守備力0）の場合はパスボール確率が激増！
+            if catcher and c_def == 0.0:
+                pb_prob = 0.10  # 10%の確率で後ろに逸らす（通常の20〜30倍の超絶ペナルティ）
+            else:
+                pb_prob = clamp(0.003 - c_def * 0.00003, 0.0005, 0.005)
+                
             wp_prob = clamp(0.004 - pitcher.control * 0.00004, 0.0005, 0.005)
             
             if random.random() < (pb_prob + wp_prob):
