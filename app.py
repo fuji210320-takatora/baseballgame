@@ -1189,6 +1189,18 @@ class PitchingState:
         p_id = id(p)
         runs = self.pitcher_runs[p_id]
         current_outs = self.current_start_outs
+
+        # ▼ 【追加】中継ぎの回跨ぎ禁止ルール（リード＆3点差以内の勝ちパターンの場合のみ）
+        if p not in self.starters and current_outs >= 3:
+            if 1 <= score_diff <= 3 and p != self.closer:
+                return True
+
+        # ▼ 【追加】9回のセーブシチュエーションなら抑えに強制交代
+        if inning >= 9 and 1 <= score_diff <= 3 and self.closer and p != self.closer:
+            # 抑えが「まだ今日投げていない」かつ「3連投以内（4連投回避）」なら絶対に出す
+            if getattr(self.closer, 'game_pitches_today', 0) == 0 and getattr(self.closer, 'consecutive_games', 0) < 3:
+                return True
+
         pitches = p.game_pitches_today
         if p_id not in self.max_pitches:
             limit = p.current_stamina * random.uniform(1.1, 1.3) + 20
