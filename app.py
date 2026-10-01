@@ -392,12 +392,16 @@ OPPONENT_LINEUPS = {
 }
 
 def best_lineup_for_team(team, dh=True):
+    bench = None
     if team.name in OPPONENT_LINEUPS:
         lineup = []
         target = OPPONENT_LINEUPS[team.name]
+        
         def get_p(name):
+            c_name = str(name).replace(" ", "").replace(" ", "").replace("・", "")
             for p in team.fielders:
-                if p.name == name: return p
+                if p.name.replace(" ", "").replace(" ", "").replace("・", "") == c_name:
+                    return p
             return None
         
         for name, pos in target["order"]:
@@ -408,6 +412,10 @@ def best_lineup_for_team(team, dh=True):
         if dh and len(lineup) == 8 and "sub" in target:
             sub_player = get_p(target["sub"])
             if sub_player: lineup.append((sub_player, "DH"))
+            
+        if not dh and "sub" in target:
+            sub_player = get_p(target["sub"])
+            if sub_player: bench = sub_player
                 
         needed = 9 if dh else 8
         if len(lineup) < needed:
@@ -415,12 +423,23 @@ def best_lineup_for_team(team, dh=True):
             remain = sorted([p for p in team.fielders if p.name not in used], key=lambda x: x.contact + x.power, reverse=True)
             while len(lineup) < needed and remain:
                 lineup.append((remain.pop(0), "DH" if dh and len(lineup) == 8 else "不明"))
-        return lineup
+                
+        if not dh and not bench:
+            used = [p.name for p, _ in lineup]
+            remain = sorted([p for p in team.fielders if p.name not in used], key=lambda x: x.contact + x.power, reverse=True)
+            if remain: bench = remain[0]
+            
+        return lineup, bench
         
     lineup = assign_initial_positions(team.fielders, dh=dh)
     lineup = decide_batting_order(lineup)
     if len(lineup) > 9: lineup = lineup[:9]
-    return lineup
+    
+    used = [p.name for p, _ in lineup]
+    remain = [p for p in team.fielders if p.name not in used]
+    if not dh and remain: bench = max(remain, key=lambda x: x.contact + x.power)
+    
+    return lineup, bench
 
 # ============================================================
 # 他球団 固定投手起用定義
@@ -605,9 +624,9 @@ def best_pitching_staff(team):
     return { "starters": starters, "bullpen": bullpen, "closer": closer, "bullpen_roles": bullpen_roles }
 
 def build_opponent_team(team, dh):
-    lineup = best_lineup_for_team(team, dh=dh)
+    lineup, bench = best_lineup_for_team(team, dh=dh)
     staff = best_pitching_staff(team)
-    return {"team": team, "lineup": lineup, "staff": staff}
+    return {"team": team, "lineup": lineup, "bench": bench, "staff": staff}
 
 # ============================================================
 # 全試合スケジュールの生成
@@ -1092,11 +1111,13 @@ class PitchingState:
 # ============================================================
 # 1試合シミュレーションロジック
 # ============================================================
-def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league, inning=1, top_bottom="表", game_state=None):
+def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league, inning=1, top_bottom="表", game_state=None, bench_player=None):
     outs = 0
     bases = [None, None, None]
     runs = 0
     hr_log = []
+
+    if game_state is None: game_state = {}
 
     while outs < 3:
         steal_state = {"outs": outs}
@@ -1123,12 +1144,36 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                     catcher.fielding.E += 1
                     catcher.fielding.UZR -= 0.3
 
-        batter = offense_lineup[batting_index[0] % len(offense_lineup)]
+        # ▼ 代打起用と投手の打力固定ロジック
+        batter_tuple = offense_lineup[batting_index[0] % len(offense_lineup)]
+        if isinstance(batter_tuple, tuple):
+            batter = batter_tuple[0]
+            is_pitcher = (batter_tuple[1] == "P")
+        else:
+            batter = batter_tuple
+            is_pitcher = False
+
+        if is_pitcher and bench_player and not game_state.get("used_pinch_hitter"):
+            is_scoring_pos = (bases[1] is not None or bases[2] is not None)
+            is_tired = (batter.game_pitches_today >= batter.stamina + 10) or (batter.pitching.R >= 3)
+            
+            if inning >= 6 and (is_scoring_pos or is_tired):
+                batter = bench_player
+                game_state["used_pinch_hitter"] = True
+
         batting_index[0] += 1
         batter.batting.PA += 1
         pitcher.pitching.BF += 1
 
-        probs, pitch_name = at_bat_probabilities(batter, pitcher, pitcher.pitching.outs)
+        if is_pitcher and batter == batter_tuple[0]:
+            calc_batter = copy.copy(batter)
+            calc_batter.contact = 18.0
+            calc_batter.power = 18.0
+            calc_batter.speed = 40.0
+        else:
+            calc_batter = batter
+
+        probs, pitch_name = at_bat_probabilities(calc_batter, pitcher, pitcher.pitching.outs)
         result = choose_result(probs)
 
         if result in ("so", "walk"): pa_pitches = random.randint(4, 8)
@@ -1244,7 +1289,7 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
 
     return runs, hr_log
 
-def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_number, op_game_number):
+def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_number, op_game_number, my_bench=None, op_bench=None):
     my_pitching = PitchingState(my_staff)
     op_pitching = PitchingState(op_staff)
 
@@ -1263,6 +1308,9 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
     op_linescore = []
     my_linescore = []
     hr_events = []
+    
+    my_game_state = {"used_pinch_hitter": False}
+    op_game_state = {"used_pinch_hitter": False}
 
     for p, _ in my_lineup: p.batting.G += 1
     for p, _ in op_lineup: p.batting.G += 1
@@ -1281,7 +1329,7 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
             if len(offense_op) == 8: offense_op.append((op_pitcher, "P"))
 
         if my_pitcher:
-            r_op, hrs_op = simulate_half_inning([p for p, _ in offense_op], op_batting_index, my_pitcher, defense_my, league, inning=inning, top_bottom="表")
+            r_op, hrs_op = simulate_half_inning([p for p, _ in offense_op], op_batting_index, my_pitcher, defense_my, league, inning=inning, top_bottom="表", game_state=op_game_state, bench_player=op_bench)
         else:
             r_op, hrs_op = 0, []
             
@@ -1316,7 +1364,7 @@ def simulate_game(my_lineup, my_staff, op_lineup, op_staff, league, my_game_numb
             if len(offense_my) == 8: offense_my.append((my_pitcher, "P"))
 
         if op_pitcher:
-            r_my, hrs_my = simulate_half_inning([p for p, _ in offense_my], my_batting_index, op_pitcher, defense_op, league, inning=inning, top_bottom="裏")
+            r_my, hrs_my = simulate_half_inning([p for p, _ in offense_my], my_batting_index, op_pitcher, defense_op, league, inning=inning, top_bottom="裏", game_state=my_game_state, bench_player=my_bench)
         else:
             r_my, hrs_my = 0, []
             
