@@ -2273,8 +2273,14 @@ else:
 
         t_data = all_teams_data[selected_team]
         batters_to_show = list(t_data["lineup"])
-        if selected_team == "マイチーム" and st.session_state.my_bench:
-            batters_to_show.append((st.session_state.my_bench, "代打"))
+        
+        # マイチームだけでなく、CP（他球団）の代打要員も表示リストに追加
+        if selected_team == "マイチーム":
+            if st.session_state.my_bench:
+                batters_to_show.append((st.session_state.my_bench, "代打"))
+        else:
+            if t_data.get("bench"):
+                batters_to_show.append((t_data["bench"], "代打"))
             
         staff = t_data["staff"]
         pitchers_list = staff["starters"] + staff["bullpen"] + ([staff["closer"]] if staff["closer"] else [])
