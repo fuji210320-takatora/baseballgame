@@ -1024,7 +1024,7 @@ def resolve_outcome(result, defense):
     ability = defender.defense_at(pos)
     base_error_prob = 0.006
     ability_factor = clamp((60.0 - ability) / 50.0, -0.6, 1.5)
-    error_prob = clamp(base_error_prob * (1.0 + ability_factor), 0.001, 0.020)
+    error_prob = clamp(base_error_prob * (1.0 + ability_factor), 0.001, 0.080)
     range_hit_prob = clamp((50.0 - ability) * 0.0015, 0.0, 0.03)
 
     rand_val = random.random()
