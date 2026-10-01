@@ -1022,10 +1022,34 @@ def resolve_outcome(result, defense):
     if defender is None: return "field_out", pos, None
 
     ability = defender.defense_at(pos)
-    base_error_prob = 0.006
-    ability_factor = clamp((60.0 - ability) / 50.0, -0.6, 1.5)
-    error_prob = clamp(base_error_prob * (1.0 + ability_factor), 0.010, 0.120)
-    range_hit_prob = clamp((50.0 - ability) * 0.0015, 0.0, 0.03)
+    
+    # ▼ ポジションごとの基準エラー率（守備力55のとき）
+    pos_base_error = {
+        "3B": 0.045,  # サード（強打の処理・送球）
+        "SS": 0.030,  # ショート（深い位置からの送球）
+        "2B": 0.020,  # セカンド（送球が短い）
+        "1B": 0.010,  # ファースト（捕球メイン）
+        "LF": 0.005,  # レフト
+        "CF": 0.005,  # センター
+        "RF": 0.005,  # ライト
+        "C":  0.003   # キャッチャー
+    }
+    base_error_prob = pos_base_error.get(pos, 0.010)
+    
+    # 適性なし（守備力0）のポジションを守らせた場合の超絶ペナルティ
+    if ability == 0.0:
+        error_prob = 0.15      # 15%の確率でポロリ・悪送球
+        range_hit_prob = 0.20  # 20%の確率で追いつけずヒットになる
+    else:
+        # ▼ 守備力55を基準（1.0倍）として、能力に応じてエラー率を増減させる
+        # （守備力35なら基準の1.5倍エラーし、守備力75なら基準の0.5倍になる）
+        ability_factor = (55.0 - ability) / 40.0
+        error_prob = base_error_prob * (1.0 + ability_factor)
+        
+        # 上限・下限のガード（どんな名手でも基準の0.2倍はエラーするし、下手でも3倍で止まる）
+        error_prob = clamp(error_prob, base_error_prob * 0.2, base_error_prob * 3.0)
+        
+        range_hit_prob = clamp((50.0 - ability) * 0.0015, 0.0, 0.03)
 
     rand_val = random.random()
     if rand_val < error_prob:
