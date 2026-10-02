@@ -1399,13 +1399,24 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
         batter.batting.PA += 1
         pitcher.pitching.BF += 1
 
+        # ▼ 追加：得点圏（2塁 または 3塁にランナーがいる）かどうかの判定
+        is_scoring_pos = (bases[1] is not None or bases[2] is not None)
+
         if is_pitcher and batter == batter_tuple[0]:
             calc_batter = copy.copy(batter)
             calc_batter.contact = 18.0
             calc_batter.power = 18.0
             calc_batter.speed = 40.0
         else:
-            calc_batter = batter
+            # ▼ 追加：得点圏なら、チームの裏ステを読み込んで能力を上下させる！
+            if is_scoring_pos:
+                calc_batter = copy.copy(batter)
+                clutch_mod = TEAM_CLUTCH_MODIFIERS.get(batter.team, 0.0)
+                # ミートとパワーに補正をかける（マイナス設定ならデバフされる）
+                calc_batter.contact = max(1.0, calc_batter.contact + clutch_mod)
+                calc_batter.power = max(1.0, calc_batter.power + clutch_mod)
+            else:
+                calc_batter = batter
 
         probs, pitch_name = at_bat_probabilities(calc_batter, pitcher, pitcher.pitching.outs)
         result, pos, defender = choose_result(probs, calc_batter, pitcher, defense)
