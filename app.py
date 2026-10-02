@@ -866,13 +866,11 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     p_pow = getattr(pitcher, 'pitch_power_base', 50.0)
     p_ctrl = pitcher.control
 
-    # ▼ 新しいデータ構造に基づく計算 (球威・制球・球種ランクの融合)
     so_quality = (pitch_quality * 0.4) + (p_pow * 0.4) + (p_ctrl * 0.2) + 5.0
     bb_quality = (p_ctrl * 0.8) + (pitch_quality * 0.2) + 5.0
     batted_quality = (p_pow * 0.4) + (pitch_quality * 0.4) + (p_ctrl * 0.2) + 5.0
 
     fatigue = fatigue_factor(pitcher, game_outs)
-
     bb_diff = bb_quality - 50.0
     raw_contact_diff = batter.contact - so_quality
 
@@ -897,7 +895,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     if batter.power >= 80.0: walk_bonus += (batter.power - 80.0) * 0.0015
 
     # ====================================================
-    # 【ステップ1】 投手成績を良くするための調整 (四球減・三振増)
+    # 【ステップ1】 三振・四球・インプレーの3択
     # ====================================================
     base_walk = 0.055  
     base_so = 0.185    
@@ -917,152 +915,84 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     total_step1 = walk + so + in_play
     step1_probs = [("walk", walk / total_step1), ("so", so / total_step1), ("in_play", in_play / total_step1)]
 
-    # ====================================================
-    # 【ステップ2】 打撃成績を良くするための調整 (ヒット率アップ)
-    # ====================================================
-    eff_contact = batter.contact
-    eff_power = batter.power
+    return step1_probs, pitch_name
 
-    if eff_contact > 65.0:
-        excess_contact = eff_contact - 65.0
-        eff_contact = 65.0 + (excess_contact * 0.45)
-
-    total_cp = eff_contact + eff_power
-    if total_cp > 190.0:
-        excess = total_cp - 190.0
-        eff_contact -= (excess * (eff_contact / total_cp)) * 0.50
-        eff_power -= (excess * (eff_power / total_cp)) * 0.50
-
-    hit_contact_diff = eff_contact - batted_quality
-    hit_power_diff = eff_power - batted_quality
-    batted_quality_delta = batted_quality - 60.0
-
-    hr_bonus = 0.0
-    if eff_power >= 65.0:
-        if eff_power < 80.0:
-            diff_58 = eff_power - 65.0
-            hr_bonus = (diff_58 * 0.0005) + ((diff_58 ** 2) * 0.00006)
-        else:
-            diff_to_80 = 80.0 - 65.0
-            base_bonus_at_80 = (diff_to_80 * 0.0005) + ((diff_to_80 ** 2) * 0.00006)
-            diff_over_80 = eff_power - 80.0
-            hr_bonus = base_bonus_at_80 + (diff_over_80 * 0.0006)
-
-    base_in_play_single = 0.275  
-    base_in_play_double = 0.080  
-    base_in_play_triple = 0.006  
-    base_in_play_hr = 0.026      
-
-    single = base_in_play_single + (hit_contact_diff * 0.0025) - (contact_penalty * 0.0015) - variety_debuff
-    double = base_in_play_double + (hit_contact_diff * 0.0002) + (hit_power_diff * 0.0003) - ((contact_penalty + power_penalty) * 0.0003)
-    triple = base_in_play_triple + (batter.speed * 0.00008)
-    hr = base_in_play_hr + (hit_power_diff * 0.0006) - (power_penalty * 0.0015) + (hr_bonus * 1.4)
-
-    single -= hr_bonus * 1.0
-    double -= hr_bonus * 0.3
-
-    single -= batted_quality_delta * 0.0005
-    double -= batted_quality_delta * 0.00025
-    hr -= batted_quality_delta * 0.0003
-
-    if fatigue < 1.0:
-        single += (1.0 - fatigue) * 0.04
-        hr += (1.0 - fatigue) * 0.02
-
-    single = clamp(single, 0.05, 0.50)
-    double = clamp(double, 0.005, 0.20)
-    triple = clamp(triple, 0.001, 0.05)
-    hr = clamp(hr, 0.001, 0.25)
-
-    hit_sum = single + double + triple + hr
-    out_in_play = max(0.10, 1.0 - hit_sum)
+def resolve_statcast_in_play(batter, defense):
+    gb_prob = 0.45; fb_prob = 0.25; ld_prob = 0.20; pu_prob = 0.10
     
-    total_step2 = hit_sum + out_in_play
-    step2_probs = [("single", single / total_step2), ("double", double / total_step2), ("triple", triple / total_step2), ("hr", hr / total_step2), ("out", out_in_play / total_step2)]
+    if batter.power > 65: fb_prob += 0.05; gb_prob -= 0.05
+    if getattr(batter, 'contact', 50) > 65: ld_prob += 0.05; pu_prob -= 0.05
+        
+    batted_type = random.choices(["GB", "FB", "LD", "PU"], weights=[gb_prob, fb_prob, ld_prob, pu_prob])[0]
+    
+    if batted_type == "PU": pos = random.choices(["C", "1B", "2B", "3B", "SS"], weights=[0.2, 0.2, 0.2, 0.2, 0.2])[0]
+    elif batted_type == "GB": pos = random.choices(["1B", "2B", "3B", "SS"], weights=[0.15, 0.35, 0.15, 0.35])[0]
+    elif batted_type == "FB": pos = random.choices(["LF", "CF", "RF"], weights=[0.33, 0.34, 0.33])[0]
+    else: pos = random.choices(["1B", "2B", "3B", "SS", "LF", "CF", "RF"], weights=[0.05, 0.10, 0.05, 0.10, 0.20, 0.30, 0.20])[0]
+        
+    defender = defense.get(pos)
+    ability = defender.defense_at(pos) if defender else 30.0
+    
+    pos_base_error = {"3B": 0.045, "SS": 0.030, "2B": 0.020, "1B": 0.010, "LF": 0.005, "CF": 0.005, "RF": 0.005, "C": 0.003}
+    base_err = pos_base_error.get(pos, 0.02)
+    
+    outcome = "out"
+    
+    if batted_type == "GB":
+        base_reach = 0.75
+        reach_prob = 0.35 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.006, 0.40, 0.95)
+        if random.random() > reach_prob:
+            outcome = "double" if pos in ["1B", "3B"] and random.random() < 0.20 else "single"
+        else:
+            err_prob = 0.20 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
+            outcome = "error" if random.random() < err_prob else "out"
+            
+    elif batted_type == "FB":
+        hr_prob = clamp((batter.power * 0.001) - 0.035, 0.0, 0.15)
+        if batter.power > 80: hr_prob += 0.03
+        if random.random() < hr_prob: outcome = "hr"
+        else:
+            base_reach = 0.85
+            reach_prob = 0.30 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.005, 0.40, 0.99)
+            if random.random() > reach_prob:
+                outcome = random.choices(["single", "double", "triple"], weights=[0.40, 0.50, 0.10])[0]
+            else:
+                err_prob = 0.10 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
+                outcome = "error" if random.random() < err_prob else "out"
+                
+    elif batted_type == "LD":
+        base_reach = 0.30
+        reach_prob = 0.10 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.005, 0.10, 0.60)
+        if random.random() > reach_prob:
+            outcome = random.choices(["single", "double", "triple"], weights=[0.55, 0.40, 0.05])[0]
+        else:
+            err_prob = 0.15 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
+            outcome = "error" if random.random() < err_prob else "out"
+            
+    elif batted_type == "PU":
+        base_reach = 0.98
+        reach_prob = 0.60 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.002, 0.60, 1.0)
+        if random.random() > reach_prob: outcome = "single"
+        else:
+            err_prob = 0.15 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
+            outcome = "error" if random.random() < err_prob else "out"
+            
+    return outcome, pos, defender
 
-    return (step1_probs, step2_probs), pitch_name
-
-def choose_result(probs_tuple):
-    step1_probs, step2_probs = probs_tuple
+def choose_result(probs, batter, defense):
     r1 = random.random()
     cumulative1 = 0.0
     step1_result = "in_play"
-    for result, prob in step1_probs:
+    for result, prob in probs:
         cumulative1 += prob
         if r1 <= cumulative1:
             step1_result = result
             break
             
-    if step1_result in ("so", "walk"): return step1_result
+    if step1_result in ("so", "walk"):
+        return step1_result, None, None
         
-    r2 = random.random()
-    cumulative2 = 0.0
-    for result, prob in step2_probs:
-        cumulative2 += prob
-        if r2 <= cumulative2:
-            return result
-    return "out"
-
-# ============================================================
-# 守備・UZR
-# ============================================================
-def choose_batted_ball_position(defense):
-    # ▼ キャッチャー(C)への打球（ファウルフライやバント処理など）を追加！
-    positions = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"]
-    
-    # ▼ ご指定いただいた超リアルな打球割合（合計 1.00）
-    weights = [0.01, 0.10, 0.18, 0.10, 0.19, 0.13, 0.16, 0.13]
-    
-    pos = random.choices(positions, weights=weights, k=1)[0]
-    defender = defense.get(pos)
-    return pos, defender
-
-def resolve_outcome(result, defense):
-    pos, defender = choose_batted_ball_position(defense)
-    if defender is None: return "field_out", pos, None
-
-    ability = defender.defense_at(pos)
-    
-    # ▼ ポジションごとの基準エラー率（守備力55のとき）
-    pos_base_error = {
-        "3B": 0.045,  # サード（強打の処理・送球）
-        "SS": 0.030,  # ショート（深い位置からの送球）
-        "2B": 0.020,  # セカンド（送球が短い）
-        "1B": 0.010,  # ファースト（捕球メイン）
-        "LF": 0.005,  # レフト
-        "CF": 0.005,  # センター
-        "RF": 0.005,  # ライト
-        "C":  0.003   # キャッチャー
-    }
-    base_error_prob = pos_base_error.get(pos, 0.010)
-    
-    # 適性なし（守備力0）のポジションを守らせた場合の超絶ペナルティ
-    if ability == 0.0:
-        error_prob = 0.15      # 15%の確率でポロリ・悪送球
-        range_hit_prob = 0.20  # 20%の確率で追いつけずヒットになる
-    else:
-        # ▼ 守備力55を基準（1.0倍）として、能力に応じてエラー率を増減させる
-        # （守備力35なら基準の1.5倍エラーし、守備力75なら基準の0.5倍になる）
-        ability_factor = (55.0 - ability) / 40.0
-        error_prob = base_error_prob * (1.0 + ability_factor)
-        
-        # 上限・下限のガード（どんな名手でも基準の0.2倍はエラーするし、下手でも3倍で止まる）
-        error_prob = clamp(error_prob, base_error_prob * 0.2, base_error_prob * 3.0)
-        
-        range_hit_prob = clamp((50.0 - ability) * 0.0015, 0.0, 0.03)
-
-    rand_val = random.random()
-    if rand_val < error_prob:
-        defender.fielding.E += 1
-        defender.fielding.UZR -= 0.5 + max(0.0, (50.0 - ability) / 100.0)
-        return "error", pos, defender
-    elif rand_val < error_prob + range_hit_prob:
-        defender.fielding.UZR -= 0.3 + max(0.0, (50.0 - ability) / 150.0)
-        return "hidden_hit", pos, defender
-    else:
-        defender.fielding.PO += 1
-        defender.fielding.UZR += (ability - 50.0) / 1200.0
-        return "field_out", pos, defender
+    return resolve_statcast_in_play(batter, defense)
 
 # ============================================================
 # 走者処理
@@ -1352,9 +1282,8 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
             catcher = defense.get("C")
             c_def = catcher.defense_at("C") if catcher else 30.0
             
-            # ▼ 追加：キャッチャー適性なし（守備力0）の場合はパスボール確率が激増！
             if catcher and c_def == 0.0:
-                pb_prob = 0.10  # 10%の確率で後ろに逸らす（通常の20〜30倍の超絶ペナルティ）
+                pb_prob = 0.10  
             else:
                 pb_prob = clamp(0.003 - c_def * 0.00003, 0.0005, 0.005)
                 
@@ -1369,12 +1298,10 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                 if bases[0] is not None: new_bases[1] = bases[0]
                 bases = new_bases
                 
-                # パスボールの場合（失策とは分けて捕逸として記録）
                 if catcher and random.random() < pb_prob / (pb_prob + wp_prob):
                     catcher.fielding.PB += 1
                     catcher.fielding.UZR -= 0.3
 
-        # ▼ 代打起用と投手の打力固定ロジック
         batter_tuple = offense_lineup[batting_index[0] % len(offense_lineup)]
         if isinstance(batter_tuple, tuple):
             batter = batter_tuple[0]
@@ -1404,16 +1331,22 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
             calc_batter = batter
 
         probs, pitch_name = at_bat_probabilities(calc_batter, pitcher, pitcher.pitching.outs)
-        result = choose_result(probs)
+        result, pos, defender = choose_result(probs, calc_batter, defense)
 
         if result in ("so", "walk"): pa_pitches = random.randint(4, 8)
         else: pa_pitches = random.randint(1, 6)
         pitcher.game_pitches_today = getattr(pitcher, 'game_pitches_today', 0) + pa_pitches
         pitcher.did_pitch_today = True
 
-        if result in ("single", "double", "triple", "hr"):
+        if result in ("single", "double", "triple", "hr", "error", "hidden_hit"):
             batter.batting.AB += 1
-            batter.batting.H += 1
+            if result != "error":
+                batter.batting.H += 1
+            else:
+                if defender is not None:
+                    defender.fielding.E += 1
+                    defender.fielding.UZR -= 0.5 + max(0.0, (50.0 - defender.defense_at(pos)) / 100.0)
+
             if result == "hr":
                 runners_on = sum(1 for runner in bases if runner is not None)
                 run_type_char = {0: "①", 1: "②", 2: "③", 3: "④"}[runners_on]
@@ -1421,12 +1354,16 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
                 hr_log.append(f"{inning}回{top_bottom} {batter.name} {batter.batting.HR}号{run_type_char}")
                 batter.batting.TB += 4
                 pitcher.pitching.HR += 1
-            elif result == "single": batter.batting.TB += 1
+            elif result in ("single", "error", "hidden_hit"):
+                if result != "error": batter.batting.TB += 1
             elif result == "double": batter.batting.double += 1; batter.batting.TB += 2
             elif result == "triple": batter.batting.triple += 1; batter.batting.TB += 3
-            pitcher.pitching.H += 1
+            
+            if result not in ("error",): pitcher.pitching.H += 1
+            
             old_bases = list(bases)
-            bases, scored, scoring = advance_on_hit(old_bases, batter, result)
+            adv_res = "single" if result in ("error", "hidden_hit") else result
+            bases, scored, scoring = advance_on_hit(old_bases, batter, adv_res)
             runs += scored
             if scored: batter.batting.RBI += scored
             for runner in scoring: runner.batting.R += 1
@@ -1447,75 +1384,55 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
             outs += 1
             pitcher.pitching.outs += 1
             
-        else:
-            outcome, pos, defender = resolve_outcome(result, defense)
-            if outcome == "hidden_hit":
-                batter.batting.AB += 1
-                batter.batting.H += 1
-                batter.batting.TB += 1
-                pitcher.pitching.H += 1
-                old_bases = list(bases)
-                bases, scored, scoring = advance_on_hit(old_bases, batter, "single")
-                runs += scored
-                if scored: batter.batting.RBI += scored
-                for runner in scoring: runner.batting.R += 1
-            elif outcome == "field_out":
-                outs += 1
-                pitcher.pitching.outs += 1
-                if defender is not None: defender.fielding.A += 1
-                is_sf = False
-                if outs <= 2 and bases[2] is not None:
-                    runner = bases[2]
-                    arm = defender.defense_at(pos) if defender else 30.0
-                    if pos in ["LF", "CF", "RF"]:
-                        sf_prob = clamp(0.50 + (runner.speed - arm) * 0.008, 0.05, 0.95)
-                        if random.random() < sf_prob:
-                            runs += 1
-                            batter.batting.RBI += 1
-                            runner.batting.R += 1
-                            batter.batting.SF += 1
-                            bases[2] = None
-                            is_sf = True
-                    elif pos in ["1B", "2B", "3B", "SS"]:
-                        run_prob = clamp(0.25 + (runner.speed - arm) * 0.005, 0.02, 0.85)
-                        if random.random() < run_prob:
-                            runs += 1
-                            batter.batting.RBI += 1
-                            runner.batting.R += 1
-                            bases[2] = None
-                if not is_sf: batter.batting.AB += 1
-                if outs <= 2 and bases[2] is None and bases[1] is not None:
-                    runner2 = bases[1]
-                    arm = defender.defense_at(pos) if defender else 30.0
-                    adv_prob = 0.0
-                    if pos == "RF": adv_prob = 0.55 + (runner2.speed - arm) * 0.005
-                    elif pos == "CF": adv_prob = 0.25 + (runner2.speed - arm) * 0.004
-                    elif pos == "LF": adv_prob = 0.05
-                    elif pos in ["1B", "2B"]: adv_prob = 0.50 + (runner2.speed - arm) * 0.005
-                    elif pos in ["3B", "SS"]: adv_prob = 0.10 + (runner2.speed - arm) * 0.003
-                    if random.random() < clamp(adv_prob, 0.05, 0.90):
-                        bases[2] = runner2
-                        bases[1] = None
-                if outs <= 2 and bases[1] is None and bases[0] is not None:
-                    runner1 = bases[0]
-                    arm = defender.defense_at(pos) if defender else 30.0
-                    adv_prob = 0.0
-                    if pos in ["1B", "2B", "3B", "SS"]: adv_prob = 0.35 + (runner1.speed - arm) * 0.004
-                    if random.random() < clamp(adv_prob, 0.01, 0.40):
-                        bases[1] = runner1
-                        bases[0] = None
-            else:
-                batter.batting.AB += 1
-                if bases[0] is None: bases[0] = batter
-                elif bases[1] is None: bases[1] = bases[0]; bases[0] = batter
-                elif bases[2] is None: bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = batter
-                else:
-                    runs += 1
-                    batter.batting.RBI += 1
-                    bases[2].batting.R += 1
-                    bases[2] = bases[1]
-                    bases[1] = bases[0]
-                    bases[0] = batter
+        elif result in ("out", "field_out"):
+            outs += 1
+            pitcher.pitching.outs += 1
+            if defender is not None: 
+                defender.fielding.PO += 1
+                defender.fielding.UZR += (defender.defense_at(pos) - 50.0) / 1200.0
+            
+            is_sf = False
+            if outs <= 2 and bases[2] is not None:
+                runner = bases[2]
+                arm = defender.defense_at(pos) if defender else 30.0
+                if pos in ["LF", "CF", "RF"]:
+                    sf_prob = clamp(0.50 + (runner.speed - arm) * 0.008, 0.05, 0.95)
+                    if random.random() < sf_prob:
+                        runs += 1
+                        batter.batting.RBI += 1
+                        runner.batting.R += 1
+                        batter.batting.SF += 1
+                        bases[2] = None
+                        is_sf = True
+                elif pos in ["1B", "2B", "3B", "SS"]:
+                    run_prob = clamp(0.25 + (runner.speed - arm) * 0.005, 0.02, 0.85)
+                    if random.random() < run_prob:
+                        runs += 1
+                        batter.batting.RBI += 1
+                        runner.batting.R += 1
+                        bases[2] = None
+            if not is_sf: batter.batting.AB += 1
+            
+            if outs <= 2 and bases[2] is None and bases[1] is not None:
+                runner2 = bases[1]
+                arm = defender.defense_at(pos) if defender else 30.0
+                adv_prob = 0.0
+                if pos == "RF": adv_prob = 0.55 + (runner2.speed - arm) * 0.005
+                elif pos == "CF": adv_prob = 0.25 + (runner2.speed - arm) * 0.004
+                elif pos == "LF": adv_prob = 0.05
+                elif pos in ["1B", "2B"]: adv_prob = 0.50 + (runner2.speed - arm) * 0.005
+                elif pos in ["3B", "SS"]: adv_prob = 0.10 + (runner2.speed - arm) * 0.003
+                if random.random() < clamp(adv_prob, 0.05, 0.90):
+                    bases[2] = runner2
+                    bases[1] = None
+            if outs <= 2 and bases[1] is None and bases[0] is not None:
+                runner1 = bases[0]
+                arm = defender.defense_at(pos) if defender else 30.0
+                adv_prob = 0.0
+                if pos in ["1B", "2B", "3B", "SS"]: adv_prob = 0.35 + (runner1.speed - arm) * 0.004
+                if random.random() < clamp(adv_prob, 0.01, 0.40):
+                    bases[1] = runner1
+                    bases[0] = None
 
     return runs, hr_log
 
@@ -1781,16 +1698,18 @@ def render_test_simulator(fielders_base, pitchers_base):
                     if rec_b: batter.batting.PA += 1
                     
                     probs, _ = at_bat_probabilities(batter, opp_pitcher, 0)
-                    result = choose_result(probs)
+                    result, pos, defender = choose_result(probs, batter, opp_def)
                     
-                    if result in ("single", "double", "triple", "hr"):
+                    if result in ("single", "double", "triple", "hr", "error", "hidden_hit"):
                         if rec_b:
-                            batter.batting.AB += 1; batter.batting.H += 1
-                            if result == "single": batter.batting.TB += 1
+                            batter.batting.AB += 1
+                            if result != "error": batter.batting.H += 1
+                            if result in ("single", "hidden_hit"): batter.batting.TB += 1
                             elif result == "double": batter.batting.double += 1; batter.batting.TB += 2
                             elif result == "triple": batter.batting.triple += 1; batter.batting.TB += 3
                             elif result == "hr": batter.batting.HR += 1; batter.batting.TB += 4
-                        bases, scored, _ = advance_on_hit(list(bases), batter, result)
+                        adv_res = "single" if result in ("error", "hidden_hit") else result
+                        bases, scored, _ = advance_on_hit(list(bases), batter, adv_res)
                         if rec_b and scored > 0: batter.batting.RBI += scored
                     elif result == "walk":
                         if rec_b: batter.batting.BB += 1
@@ -1799,35 +1718,20 @@ def render_test_simulator(fielders_base, pitchers_base):
                     elif result == "so":
                         if rec_b: batter.batting.AB += 1; batter.batting.SO += 1
                         inning_outs += 1
-                    else:
-                        outcome, pos, defender = resolve_outcome(result, opp_def)
-                        if outcome == "hidden_hit":
-                            if rec_b:
-                                batter.batting.AB += 1; batter.batting.H += 1; batter.batting.TB += 1
-                            bases, scored, _ = advance_on_hit(list(bases), batter, "single")
-                            if rec_b and scored > 0: batter.batting.RBI += scored
-                        elif outcome == "field_out":
-                            inning_outs += 1
-                            is_sf = False
-                            if inning_outs <= 2 and bases[2] is not None:
-                                arm = defender.defense_at(pos) if defender else 30.0
-                                if pos in ["LF", "CF", "RF"]:
-                                    if random.random() < clamp(0.50 + (bases[2].speed - arm) * 0.008, 0.05, 0.95):
-                                        if rec_b: batter.batting.RBI += 1; batter.batting.SF += 1
-                                        bases[2] = None; is_sf = True
-                                elif pos in ["1B", "2B", "3B", "SS"]:
-                                    if random.random() < clamp(0.25 + (bases[2].speed - arm) * 0.005, 0.02, 0.85):
-                                        if rec_b: batter.batting.RBI += 1
-                                        bases[2] = None
-                            if not is_sf and rec_b: batter.batting.AB += 1
-                        else:
-                            if rec_b: batter.batting.AB += 1
-                            if bases[0] is None: bases[0] = batter
-                            elif bases[1] is None: bases[1] = bases[0]; bases[0] = batter
-                            elif bases[2] is None: bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = batter
-                            else:
-                                if rec_b: batter.batting.RBI += 1
-                                bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = batter
+                    elif result in ("out", "field_out"):
+                        inning_outs += 1
+                        is_sf = False
+                        if inning_outs <= 2 and bases[2] is not None:
+                            arm = defender.defense_at(pos) if defender else 30.0
+                            if pos in ["LF", "CF", "RF"]:
+                                if random.random() < clamp(0.50 + (bases[2].speed - arm) * 0.008, 0.05, 0.95):
+                                    if rec_b: batter.batting.RBI += 1; batter.batting.SF += 1
+                                    bases[2] = None; is_sf = True
+                            elif pos in ["1B", "2B", "3B", "SS"]:
+                                if random.random() < clamp(0.25 + (bases[2].speed - arm) * 0.005, 0.02, 0.85):
+                                    if rec_b: batter.batting.RBI += 1
+                                    bases[2] = None
+                        if not is_sf and rec_b: batter.batting.AB += 1
 
                     if rec_b and batter.batting.PA >= target_pa:
                         completed_fielders.add(batter.name)
@@ -1855,15 +1759,19 @@ def render_test_simulator(fielders_base, pitchers_base):
 
                     opp_batter = random.choice(opp_lineup)
                     if rec_p: pitcher.pitching.BF += 1
-                    probs, _ = at_bat_probabilities(opp_batter, pitcher, game_outs)
-                    result = choose_result(probs)
                     
-                    if result in ("single", "double", "triple", "hr"):
-                        if rec_p:
+                    probs, _ = at_bat_probabilities(opp_batter, pitcher, game_outs)
+                    result, pos, defender = choose_result(probs, opp_batter, def_dict)
+                    
+                    if result in ("single", "double", "triple", "hr", "error", "hidden_hit"):
+                        if rec_p and result != "error":
                             pitcher.pitching.H += 1
                             if result == "hr": pitcher.pitching.HR += 1
-                        bases, scored, _ = advance_on_hit(list(bases), opp_batter, result)
-                        if rec_p: pitcher.pitching.R += scored; pitcher.pitching.ER += scored
+                        adv_res = "single" if result in ("error", "hidden_hit") else result
+                        bases, scored, _ = advance_on_hit(list(bases), opp_batter, adv_res)
+                        if rec_p:
+                            pitcher.pitching.R += scored
+                            if result != "error": pitcher.pitching.ER += scored 
                     elif result == "walk":
                         if rec_p: pitcher.pitching.BB += 1
                         bases, scored, _ = advance_on_walk(bases, opp_batter)
@@ -1877,31 +1785,18 @@ def render_test_simulator(fielders_base, pitchers_base):
                                 completed_pitchers.add(pitcher.name)
                                 p_pool = [p for p in test_pitchers if p.name not in completed_pitchers]
                                 if not p_pool: break
-                    else:
-                        outcome, pos, defender = resolve_outcome(result, def_dict)
-                        if outcome == "hidden_hit":
-                            if rec_p: pitcher.pitching.H += 1
-                            bases, scored, _ = advance_on_hit(list(bases), opp_batter, "single")
-                            if rec_p: pitcher.pitching.R += scored; pitcher.pitching.ER += scored
-                        elif outcome == "field_out":
-                            inning_outs += 1; game_outs += 1
-                            if rec_p:
-                                pitcher.pitching.outs += 1
-                                if pitcher.pitching.outs >= target_outs:
-                                    completed_pitchers.add(pitcher.name)
-                                    p_pool = [p for p in test_pitchers if p.name not in completed_pitchers]
-                                    if not p_pool: break
-                            if inning_outs <= 2 and bases[2] is not None:
-                                if random.random() < clamp(0.50 + (bases[2].speed - 50.0) * 0.008, 0.05, 0.95):
-                                    if rec_p: pitcher.pitching.R += 1; pitcher.pitching.ER += 1
-                                    bases[2] = None
-                        else:
-                            if bases[0] is None: bases[0] = opp_batter
-                            elif bases[1] is None: bases[1] = bases[0]; bases[0] = opp_batter
-                            elif bases[2] is None: bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = opp_batter
-                            else:
+                    elif result in ("out", "field_out"):
+                        inning_outs += 1; game_outs += 1
+                        if rec_p:
+                            pitcher.pitching.outs += 1
+                            if pitcher.pitching.outs >= target_outs:
+                                completed_pitchers.add(pitcher.name)
+                                p_pool = [p for p in test_pitchers if p.name not in completed_pitchers]
+                                if not p_pool: break
+                        if inning_outs <= 2 and bases[2] is not None:
+                            if random.random() < clamp(0.50 + (bases[2].speed - 50.0) * 0.008, 0.05, 0.95):
                                 if rec_p: pitcher.pitching.R += 1; pitcher.pitching.ER += 1
-                                bases[2] = bases[1]; bases[1] = bases[0]; bases[0] = opp_batter
+                                bases[2] = None
 
             done_count = len(completed_fielders) + len(completed_pitchers)
             if done_count % 5 == 0 or done_count == total_targets:
