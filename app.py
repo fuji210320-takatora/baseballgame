@@ -917,11 +917,40 @@ def at_bat_probabilities(batter, pitcher, game_outs):
 
     return step1_probs, pitch_name
 
-def resolve_statcast_in_play(batter, defense):
+def resolve_statcast_in_play(batter, pitcher, defense):
     gb_prob = 0.45; fb_prob = 0.25; ld_prob = 0.20; pu_prob = 0.10
     
+    # ====================================================
+    # ▼ 打者の能力による補正
+    # ====================================================
     if batter.power > 65: fb_prob += 0.05; gb_prob -= 0.05
     if getattr(batter, 'contact', 50) > 65: ld_prob += 0.05; pu_prob -= 0.05
+
+    # ====================================================
+    # ▼ 投手の能力による補正（ここが追加部分！）
+    # ====================================================
+    p_pow = getattr(pitcher, 'pitch_power_base', 50.0)
+    p_ctrl = pitcher.control
+
+    if p_ctrl > 55.0:
+        # 制球が高いと、低めに集めて「ゴロ」を打たせる（鋭い打球が減る）
+        bonus = (p_ctrl - 55.0) * 0.0025
+        gb_prob += bonus
+        ld_prob -= bonus / 2
+        fb_prob -= bonus / 2
+
+    if p_pow > 55.0:
+        # 球威が高いと、力で押し込んで「ポップフライ」にする（鋭い打球が減る）
+        bonus = (p_pow - 55.0) * 0.0025
+        pu_prob += bonus
+        ld_prob -= bonus / 2
+        fb_prob -= bonus / 2
+
+    # 確率がマイナスにならないようにガード
+    gb_prob = max(0.05, gb_prob)
+    fb_prob = max(0.05, fb_prob)
+    ld_prob = max(0.05, ld_prob)
+    pu_prob = max(0.01, pu_prob)
         
     batted_type = random.choices(["GB", "FB", "LD", "PU"], weights=[gb_prob, fb_prob, ld_prob, pu_prob])[0]
     
@@ -979,7 +1008,7 @@ def resolve_statcast_in_play(batter, defense):
             
     return outcome, pos, defender
 
-def choose_result(probs, batter, defense):
+def choose_result(probs, batter, pitcher, defense):
     r1 = random.random()
     cumulative1 = 0.0
     step1_result = "in_play"
@@ -992,7 +1021,8 @@ def choose_result(probs, batter, defense):
     if step1_result in ("so", "walk"):
         return step1_result, None, None
         
-    return resolve_statcast_in_play(batter, defense)
+    # ▼ ピッチャーの情報も渡すように変更！
+    return resolve_statcast_in_play(batter, pitcher, defense)
 
 # ============================================================
 # 走者処理
