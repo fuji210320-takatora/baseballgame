@@ -978,11 +978,11 @@ def resolve_statcast_in_play(batter, pitcher, defense):
             outcome = "error" if random.random() < err_prob else "out"
             
     elif batted_type == "FB":
-        if batter.power <= 60.0:
+        if batter.power <= 75.0:
             diff = max(0.0, batter.power - 40.0)
             hr_prob = (diff * 0.004) + ((diff ** 2) * 0.00015)
         else:
-            excess = batter.power - 60.0
+            excess = batter.power - 75.0
             hr_prob = 0.255 + (excess * 0.006)
             
         hr_prob = clamp(hr_prob, 0.0, 0.65)
