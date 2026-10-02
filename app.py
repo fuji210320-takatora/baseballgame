@@ -2185,7 +2185,6 @@ st.title("⚾ 野球チームメーカー")
 
 with st.sidebar:
     st.header("モード選択")
-    # ▼ メニューが新しくなりました！
     app_mode = st.radio("機能を選んでください", [
         "チームメーカー（ランダムドラフト）", 
         "カスタムチーム（自由編成）", 
@@ -2207,6 +2206,17 @@ except Exception as e:
     st.stop()
 
 st.sidebar.success(f"野手 {len(fielders_all)}人 / 投手 {len(pitchers_all)}人")
+
+# ▼ 【修正点1】モードが切り替わったら、過去の「画面状態」をリセットする！
+if "last_app_mode" not in st.session_state:
+    st.session_state.last_app_mode = app_mode
+
+if st.session_state.last_app_mode != app_mode:
+    st.session_state.last_app_mode = app_mode
+    st.session_state.step = "start"
+    # 前のモードで選んだ選手もリセット
+    for k in ["draft_fielders", "draft_pitchers", "draft_fielder_pool", "draft_pitcher_pool", "fielder_skips", "pitcher_skips"]:
+        st.session_state.pop(k, None)
 
 # ▼ 各モードへの分岐
 if app_mode == "12球団オートペナント":
@@ -2244,18 +2254,13 @@ else:
             st.markdown('<div style="font-size: 36px; font-weight: 900; text-align: center; margin-bottom: 20px;">野球チームメーカー</div>', unsafe_allow_html=True)
             st.write("ランダムに現れる選手を取捨選択して、チームを作れ！")
             if st.button("ゲームを始める", type="primary", use_container_width=True):
-                st.session_state.step = "league_setup"
+                # ▼ 【修正点2】リーグ設定画面を消して、裏で設定してからすぐドラフトへ！
+                st.session_state.central = CENTRAL_TEAMS.copy()
+                st.session_state.pacific = PACIFIC_TEAMS.copy()
+                st.session_state.step = "draft_fielders"
                 st.rerun()
 
     # ▼ これ以降は「ランダムドラフト」用の処理（カスタムではスキップされる）
-    elif st.session_state.step == "league_setup":
-        st.header("① NPBリーグ設定")
-        if st.button("リーグ設定を確認してドラフト開始", type="primary"):
-            st.session_state.central = CENTRAL_TEAMS.copy()
-            st.session_state.pacific = PACIFIC_TEAMS.copy()
-            st.session_state.step = "draft_fielders"
-            st.rerun()
-
     elif st.session_state.step == "draft_fielders":
         if draft_page("野手", fielders_all, 9, skip_limit=5):
             st.session_state.step = "draft_pitchers"
