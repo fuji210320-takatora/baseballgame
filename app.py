@@ -978,9 +978,16 @@ def resolve_statcast_in_play(batter, pitcher, defense):
             outcome = "error" if random.random() < err_prob else "out"
             
     elif batted_type == "FB":
-        # ▼ 修正：パワーによるHR率を劇的に引き上げ（パワー依存の二次関数で爆発的に増える）
-        diff = max(0.0, batter.power - 40.0)
-        hr_prob = clamp((diff * 0.004) + ((diff ** 2) * 0.00015), 0.0, 0.65)
+        # ▼ 修正：パワー70までは二次関数で伸び、70以降は傾斜を緩やかにする
+        if batter.power <= 70.0:
+            diff = max(0.0, batter.power - 40.0)
+            hr_prob = (diff * 0.004) + ((diff ** 2) * 0.00015)
+        else:
+            # パワー70の時の確率(25.5%)をベースに、超過分は緩やかに(一次関数で)加算する
+            excess = batter.power - 70.0
+            hr_prob = 0.255 + (excess * 0.006)
+            
+        hr_prob = clamp(hr_prob, 0.0, 0.65)
         
         if random.random() < hr_prob:
             outcome = "hr"
