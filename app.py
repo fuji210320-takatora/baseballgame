@@ -1323,7 +1323,7 @@ class PitchingState:
 TEAM_CLUTCH_MODIFIERS = {
     "阪神": -40.0,
     "広島": 30.0,
-    "DeNA": 50.0,
+    "DeNA": 10.0,
     "巨人": 0.0,
     "ヤクルト": 40.0,
     "中日": -90.0,
