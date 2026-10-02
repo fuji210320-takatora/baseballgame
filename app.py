@@ -1362,7 +1362,7 @@ def simulate_half_inning(offense_lineup, batting_index, pitcher, defense, league
 
         probs, pitch_name = at_bat_probabilities(calc_batter, pitcher, pitcher.pitching.outs)
         result, pos, defender = choose_result(probs, calc_batter, pitcher, defense)
-
+        
         if result in ("so", "walk"): pa_pitches = random.randint(4, 8)
         else: pa_pitches = random.randint(1, 6)
         pitcher.game_pitches_today = getattr(pitcher, 'game_pitches_today', 0) + pa_pitches
