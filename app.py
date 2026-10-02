@@ -971,20 +971,25 @@ def resolve_statcast_in_play(batter, pitcher, defense):
         base_reach = 0.75
         reach_prob = 0.35 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.006, 0.40, 0.95)
         if random.random() > reach_prob:
-            outcome = "double" if pos in ["1B", "3B"] and random.random() < 0.20 else "single"
+            # ▼ 修正：ゴロが1・3塁線を抜けて二塁打になる確率を 20% → 10% に減少
+            outcome = "double" if pos in ["1B", "3B"] and random.random() < 0.10 else "single"
         else:
             err_prob = 0.20 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
             outcome = "error" if random.random() < err_prob else "out"
             
     elif batted_type == "FB":
-        hr_prob = clamp((batter.power * 0.001) - 0.035, 0.0, 0.15)
-        if batter.power > 80: hr_prob += 0.03
-        if random.random() < hr_prob: outcome = "hr"
+        # ▼ 修正：パワーによるHR率を劇的に引き上げ（パワー依存の二次関数で爆発的に増える）
+        diff = max(0.0, batter.power - 40.0)
+        hr_prob = clamp((diff * 0.004) + ((diff ** 2) * 0.00015), 0.0, 0.65)
+        
+        if random.random() < hr_prob:
+            outcome = "hr"
         else:
             base_reach = 0.85
             reach_prob = 0.30 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.005, 0.40, 0.99)
             if random.random() > reach_prob:
-                outcome = random.choices(["single", "double", "triple"], weights=[0.40, 0.50, 0.10])[0]
+                # ▼ 修正：外野に落ちたフライが二塁打になる確率を 50% → 30% に減少
+                outcome = random.choices(["single", "double", "triple"], weights=[0.65, 0.30, 0.05])[0]
             else:
                 err_prob = 0.10 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
                 outcome = "error" if random.random() < err_prob else "out"
@@ -993,7 +998,8 @@ def resolve_statcast_in_play(batter, pitcher, defense):
         base_reach = 0.30
         reach_prob = 0.10 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.005, 0.10, 0.60)
         if random.random() > reach_prob:
-            outcome = random.choices(["single", "double", "triple"], weights=[0.55, 0.40, 0.05])[0]
+            # ▼ 修正：外野を抜けるライナーが二塁打になる確率を 40% → 25% に減少
+            outcome = random.choices(["single", "double", "triple"], weights=[0.70, 0.25, 0.05])[0]
         else:
             err_prob = 0.15 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
             outcome = "error" if random.random() < err_prob else "out"
@@ -1001,7 +1007,8 @@ def resolve_statcast_in_play(batter, pitcher, defense):
     elif batted_type == "PU":
         base_reach = 0.98
         reach_prob = 0.60 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.002, 0.60, 1.0)
-        if random.random() > reach_prob: outcome = "single"
+        if random.random() > reach_prob:
+            outcome = "single"
         else:
             err_prob = 0.15 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
             outcome = "error" if random.random() < err_prob else "out"
