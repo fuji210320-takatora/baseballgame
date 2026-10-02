@@ -897,7 +897,7 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     # ====================================================
     # 【ステップ1】 三振・四球・インプレーの3択
     # ====================================================
-    base_walk = 0.055  
+    base_walk = 0.095  
     base_so = 0.155    
 
     walk = base_walk - (bb_diff * 0.0015) + walk_bonus
