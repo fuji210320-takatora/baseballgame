@@ -918,11 +918,11 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     return step1_probs, pitch_name
 
 def resolve_statcast_in_play(batter, pitcher, defense):
-    # ▼ 修正①：平均的な投手（能力50）が打たせて取れるように、基準を「アウトになりやすい打球」へ変更
-    gb_prob = 0.48  # ゴロ（少し増）
-    fb_prob = 0.25  # フライ
-    ld_prob = 0.16  # ライナー（ヒットになりやすいので減）
-    pu_prob = 0.11  # ポップフライ（少し増）
+    # ▼ 打率アップ修正①：ヒットになりやすいライナー(LD)の割合を増やし、ゴロ(GB)とポップ(PU)を少し減らす
+    gb_prob = 0.45  
+    fb_prob = 0.25  
+    ld_prob = 0.20  
+    pu_prob = 0.10  
     
     # ▼ 打者の能力補正（基準50からの差分で計算）
     b_pow_diff = batter.power - 50.0
@@ -931,18 +931,17 @@ def resolve_statcast_in_play(batter, pitcher, defense):
         
     b_con_diff = getattr(batter, 'contact', 50.0) - 50.0
     if b_con_diff > 0:
-        ld_prob += b_con_diff * 0.0015; pu_prob -= b_con_diff * 0.0015
+        # ▼ 打率アップ修正②：ミート力が高いと、より鋭いライナーが出やすくなるよう補正を強化（0.0015 → 0.0025）
+        ld_prob += b_con_diff * 0.0025; pu_prob -= b_con_diff * 0.0025
 
-    # ▼ 修正②：投手の能力補正（「55以上」という制限を撤廃し、50を基準に全投手に影響させる！）
+    # ▼ 投手の能力補正
     p_pow = getattr(pitcher, 'pitch_power_base', 50.0)
     p_ctrl = pitcher.control
 
-    # 制球力によるゴロ誘導（50より高ければゴロ増・ライナー減。低いと痛打ライナーを打たれやすくなる）
     ctrl_diff = p_ctrl - 50.0
     gb_prob += ctrl_diff * 0.0020
     ld_prob -= ctrl_diff * 0.0020
 
-    # 球威によるポップフライ誘導（50より高ければポップフライ増・フライ減。低いと外野まで運ばれる）
     pow_diff = p_pow - 50.0
     pu_prob += pow_diff * 0.0020
     fb_prob -= pow_diff * 0.0020
@@ -969,7 +968,8 @@ def resolve_statcast_in_play(batter, pitcher, defense):
     outcome = "out"
     
     if batted_type == "GB":
-        base_reach = 0.76  # 修正③：野手がゴロを処理できる確率をほんの少し底上げ
+        # ▼ 打率アップ修正③：内野ゴロが野手の間を抜けてヒットになる確率を底上げ（アウト率 0.76 → 0.72）
+        base_reach = 0.72
         reach_prob = 0.35 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.006, 0.40, 0.95)
         if random.random() > reach_prob:
             outcome = "double" if pos in ["1B", "3B"] and random.random() < 0.10 else "single"
@@ -978,37 +978,36 @@ def resolve_statcast_in_play(batter, pitcher, defense):
             outcome = "error" if random.random() < err_prob else "out"
             
     elif batted_type == "FB":
-        # ▼ 修正：ご提示いただいた「パワー別・理想のHR本数」に完全に一致させる専用の多段階傾斜！
+        # ▼ パワーによる専用傾斜（先ほどの完璧な調整が適用されています！）
         p = batter.power
         if p < 50.0:
-            hr_prob = max(0.0, (p - 30.0) * 0.004) # 50未満はほぼ打てない
+            hr_prob = max(0.0, (p - 30.0) * 0.002)
         elif p < 60.0:
-            hr_prob = 0.055 + (p - 50.0) * 0.0050  # 50で4.5%, 60で9.5% (約2〜12本)
+            hr_prob = 0.030 + (p - 50.0) * 0.0040
         elif p < 65.0:
-            hr_prob = 0.075 + (p - 60.0) * 0.0060  # 65で12.5% (約10〜15本)
+            hr_prob = 0.070 + (p - 60.0) * 0.0050
         elif p < 70.0:
-            hr_prob = 0.125 + (p - 65.0) * 0.0080  # 70で16.5% (約13〜20本)
+            hr_prob = 0.095 + (p - 65.0) * 0.0060
         elif p < 75.0:
-            hr_prob = 0.145 + (p - 70.0) * 0.0130  # 75で23.0% (約21〜25本)
+            hr_prob = 0.125 + (p - 70.0) * 0.0080
         elif p < 77.0:
-            hr_prob = 0.190 + (p - 75.0) * 0.0225  # 77で27.5% (約26〜29本 ※覚醒ゾーン)
+            hr_prob = 0.165 + (p - 75.0) * 0.0125
         elif p < 80.0:
-            hr_prob = 0.235 + (p - 77.0) * 0.0166  # 80で32.5% (約30〜35本)
+            hr_prob = 0.190 + (p - 77.0) * 0.0100
         elif p < 85.0:
-            hr_prob = 0.290 + (p - 80.0) * 0.0110  # 85で38.0% (約36〜40本 ※伸びが少し落ち着く)
+            hr_prob = 0.220 + (p - 80.0) * 0.0080
         elif p < 90.0:
-            hr_prob = 0.380 + (p - 85.0) * 0.0150  # 90で45.5% (約41〜50本)
-        elif p < 95.0:
-            hr_prob = 0.410 + (p - 90.0) * 0.0190  # 95で55.0% (51本〜)
+            hr_prob = 0.260 + (p - 85.0) * 0.0080
         else:
-            hr_prob = 0.500 + (p - 95.0) * 0.0200  # 95以上は青天井
+            hr_prob = 0.300 + (p - 90.0) * 0.0050
             
-        hr_prob = clamp(hr_prob, 0.0, 0.85)
-        
+        hr_prob = clamp(hr_prob, 0.0, 0.40) 
+            
         if random.random() < hr_prob:
             outcome = "hr"
         else:
-            base_reach = 0.85
+            # ▼ 打率アップ修正④：フライが外野の前にポテンと落ちる確率を少し底上げ（アウト率 0.85 → 0.82）
+            base_reach = 0.82
             reach_prob = 0.30 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.005, 0.40, 0.99)
             if random.random() > reach_prob:
                 outcome = random.choices(["single", "double", "triple"], weights=[0.65, 0.30, 0.05])[0]
