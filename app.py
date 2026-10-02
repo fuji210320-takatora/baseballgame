@@ -1710,23 +1710,140 @@ def render_12teams_pennant(fielders_base, pitchers_base):
     if st.session_state.auto_pennant_results:
         all_teams_data = st.session_state.auto_pennant_results
         
-        c1, c2 = st.columns(2)
-        for league_name, t_list, col in [("セ・リーグ", CENTRAL_TEAMS, c1), ("パ・リーグ", PACIFIC_TEAMS, c2)]:
-            with col:
-                st.subheader(f"🏆 {league_name}")
-                std = []
-                for t in t_list:
-                    d = all_teams_data[t]
-                    w, l, dr = d["wins"], d["losses"], d["draws"]
-                    std.append({"チーム": t, "勝": w, "敗": l, "分": dr, "勝率": w/(w+l) if (w+l)>0 else 0, "差": "-"})
-                std.sort(key=lambda x: x["勝率"], reverse=True)
-                top_w, top_l = std[0]["勝"], std[0]["敗"]
-                for r in std:
-                    gb = ((top_w - r["勝"]) + (r["敗"] - top_l)) / 2.0
-                    r["差"] = "－" if gb == 0 else f"{gb:.1f}"
-                    r["勝率"] = f"{r['勝率']:.3f}".replace("0.", ".")
-                st.dataframe(pd.DataFrame(std), hide_index=True, use_container_width=True)
+        # チーム選択セレクトボックス
+        team_list = list(all_teams_data.keys())
+        selected_team = st.selectbox("📊 成績を表示するチーム", team_list)
 
+        tab_standings, tab_bat, tab_pitch, tab_detail, tab_team = st.tabs(["順位表", "打撃成績", "投球成績", "個人詳細成績", "チーム成績"])
+
+        with tab_standings:
+            c1, c2 = st.columns(2)
+            for league_name, t_list, col in [("セ・リーグ", CENTRAL_TEAMS, c1), ("パ・リーグ", PACIFIC_TEAMS, c2)]:
+                with col:
+                    st.subheader(f"🏆 {league_name}")
+                    std = []
+                    for t in t_list:
+                        d = all_teams_data[t]
+                        w, l, dr = d["wins"], d["losses"], d["draws"]
+                        std.append({"チーム": t, "勝": w, "敗": l, "分": dr, "勝率": w/(w+l) if (w+l)>0 else 0, "差": "-"})
+                    std.sort(key=lambda x: x["勝率"], reverse=True)
+                    top_w, top_l = std[0]["勝"], std[0]["敗"]
+                    for r in std:
+                        gb = ((top_w - r["勝"]) + (r["敗"] - top_l)) / 2.0
+                        r["差"] = "－" if gb == 0 else f"{gb:.1f}"
+                        r["勝率"] = f"{r['勝率']:.3f}".replace("0.", ".")
+                    st.dataframe(pd.DataFrame(std), hide_index=True, use_container_width=True)
+
+        # 選択されたチームのデータを取得
+        t_data = all_teams_data[selected_team]
+        batters_to_show = list(t_data["lineup"])
+        if t_data.get("bench"):
+            batters_to_show.append((t_data["bench"], "代打"))
+        
+        staff = t_data["staff"]
+        pitchers_list = staff["starters"] + staff["bullpen"] + ([staff["closer"]] if staff["closer"] else [])
+
+        # HTMLカード（打者）
+        html_bat = '<div class="stats-container">'
+        for i, (p, pos) in enumerate(batters_to_show, start=1):
+            if pos == "代打": icon_char, color, jp_pos, order_str = "代", "#888888", "代打", "-"
+            else: icon_char, color, jp_pos = pos_icon(pos); order_str = str(i)
+            avg_str, ops_str = fmt_pct(batting_avg(p)), fmt_pct(ops(p))
+            uzr = p.fielding.UZR
+            uzr_str = f"+{uzr:.1f}" if uzr > 0 else f"{uzr:.1f}"
+            if pos in ["DH", "代打"]: uzr_str = "－"
+            html_bat += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{order_str}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{jp_pos}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">打率</span><span class="ms-val">{avg_str}</span></div><div class="ms-item"><span class="ms-label">本塁打</span><span class="ms-val-small">{p.batting.HR}</span></div><div class="ms-item"><span class="ms-label">打点</span><span class="ms-val-small">{p.batting.RBI}</span></div><div class="ms-item"><span class="ms-label">盗塁</span><span class="ms-val-small">{p.batting.SB}</span></div><div class="ms-item"><span class="ms-label">OPS</span><span class="ms-val">{ops_str}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.batting.G}</b></div><div class="ss-item">打席<b>{p.batting.PA}</b></div><div class="ss-item">打数<b>{p.batting.AB}</b></div><div class="ss-item">安打<b>{p.batting.H}</b></div><div class="ss-item">犠飛<b>{p.batting.SF}</b></div><div class="ss-item">UZR<b>{uzr_str}</b></div><div class="ss-item">失策<b>{p.fielding.E}</b></div></div></div>'
+        html_bat += '</div>'
+
+        # HTMLカード（投手）
+        html_pitch = '<div class="stats-container">'
+        for i, p in enumerate(pitchers_list, start=1):
+            icon_char = "投"
+            if p in staff["starters"]: role_str, color = "先発", "#E53935"
+            elif p == staff["closer"]: role_str, color = "抑え", "#EC407A"
+            else: role_str, color = staff["bullpen_roles"].get(id(p), "中継ぎ"), "#EC407A"
+            era_str = f"{era(p):.2f}"
+            relief_wins = p.pitching.W if role_str != "先発" else 0
+            hp_val = p.pitching.HLD + relief_wins
+            html_pitch += f'<div class="stats-row"><div class="player-hdr"><div class="p-order">{i}</div><div class="p-icon" style="background-color: {color};">{icon_char}</div><div class="p-name-container"><div class="p-fullname">{p.name}</div><div class="p-pos">{role_str}</div></div></div><div class="main-stats"><div class="ms-item"><span class="ms-label">防御率</span><span class="ms-val">{era_str}</span></div><div class="ms-item"><span class="ms-label">勝</span><span class="ms-val-small">{p.pitching.W}</span></div><div class="ms-item"><span class="ms-label">敗</span><span class="ms-val-small">{p.pitching.L}</span></div><div class="ms-item"><span class="ms-label">HP</span><span class="ms-val-small">{hp_val}</span></div><div class="ms-item"><span class="ms-label">S</span><span class="ms-val-small">{p.pitching.SV}</span></div><div class="ms-item"><span class="ms-label">奪三振</span><span class="ms-val-small">{p.pitching.SO}</span></div></div><div class="sub-stats"><div class="ss-item">試合<b>{p.pitching.G}</b></div><div class="ss-item">先発<b>{p.pitching.GS}</b></div><div class="ss-item">投球回<b>{innings_str(p.pitching.outs)}</b></div><div class="ss-item">四球<b>{p.pitching.BB}</b></div><div class="ss-item">自責点<b>{p.pitching.ER}</b></div></div></div>'
+        html_pitch += '</div>'
+
+        # スタイル適用
+        st.markdown("""
+        <style>
+        .stats-container { background-color: #F8F7F5; padding: 5px; border-radius: 8px; margin-bottom: 10px; }
+        .stats-row { border-bottom: 1px solid #E5E5E5; padding: 20px 10px 15px; }
+        .stats-row:last-child { border-bottom: none; }
+        .player-hdr { display: flex; align-items: center; margin-bottom: 15px; }
+        .p-order { font-size: 18px; font-weight: bold; color: #A0A0A0; width: 25px; text-align: center; }
+        .p-icon { width: 34px; height: 34px; border-radius: 50%; color: white; display: flex; justify-content: center; align-items: center; font-size: 14px; font-weight: bold; margin: 0 15px 0 5px; }
+        .p-name-container { line-height: 1.2; }
+        .p-fullname { font-size: 18px; font-weight: 900; color: #111; }
+        .p-pos { font-size: 11px; color: #888; margin-top: 4px; }
+        .main-stats { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 15px; padding: 0 5px; }
+        .ms-item { display: flex; align-items: baseline; }
+        .ms-label { font-size: 11px; color: #888; margin-right: 5px; font-weight: bold; }
+        .ms-val { font-size: 24px; font-weight: 900; color: #111; }
+        .ms-val-small { font-size: 20px; font-weight: bold; color: #111; }
+        .sub-stats { display: flex; justify-content: space-between; background-color: #EFEFEF; padding: 10px 15px; border-radius: 4px; }
+        .ss-item { font-size: 11px; color: #777; }
+        .ss-item b { color: #333; font-size: 12px; margin-left: 4px; }
+        </style>
+        """, unsafe_allow_html=True)
+
+        with tab_bat: st.markdown(html_bat, unsafe_allow_html=True)
+        with tab_pitch: st.markdown(html_pitch, unsafe_allow_html=True)
+
+        with tab_detail:
+            st.subheader("打者詳細成績")
+            bat_df_data = []
+            for p, pos in batters_to_show:
+                b = p.batting
+                main_pos = max(p.defense.items(), key=lambda x: x[1])[0] if p.defense else "DH"
+                bat_df_data.append({
+                    "選手名": p.name, "打率": fmt_pct(batting_avg(p)),
+                    "試合": b.G, "打席": b.PA, "打数": b.AB, "得点": b.R, "安打": b.H, "二塁打": b.double, "三塁打": b.triple, "本塁打": b.HR,
+                    "塁打": b.TB, "打点": b.RBI, "盗塁": b.SB, "盗塁死": b.CS, "四球": b.BB, "三振": b.SO, "犠飛": b.SF,
+                    "出塁率": fmt_pct(obp(p)), "長打率": fmt_pct(slg(p)), "OPS": fmt_pct(ops(p)), "wRC+": round(calc_wrc_plus(p), 1),
+                    "UZR": round(p.fielding.UZR, 1) if pos not in ["DH", "代打"] else "-", "失策": p.fielding.E, "WAR": round(calc_batter_war(p, main_pos), 1)
+                })
+            st.dataframe(pd.DataFrame(bat_df_data), hide_index=True, use_container_width=True)
+
+            st.subheader("投手詳細成績")
+            pit_df_data = []
+            for p in pitchers_list:
+                pt = p.pitching
+                whip = (pt.H + pt.BB) / (pt.outs / 3) if pt.outs > 0 else 0.0
+                pit_df_data.append({
+                    "選手名": p.name, "防御率": f"{era(p):.2f}", "FIP": f"{calc_fip(p):.2f}",
+                    "登板": pt.G, "先発": pt.GS, "勝": pt.W, "敗": pt.L, "セーブ": pt.SV, "ホールド": pt.HLD,
+                    "勝率": fmt_pct(pt.W / (pt.W + pt.L) if (pt.W + pt.L) > 0 else 0),
+                    "投球回": innings_str(pt.outs), "打者": pt.BF, "被安打": pt.H, "被本塁打": pt.HR, "与四球": pt.BB, "奪三振": pt.SO,
+                    "失点": pt.R, "自責点": pt.ER, "WHIP": f"{whip:.2f}", "WAR": round(calc_pitcher_war(p), 1)
+                })
+            st.dataframe(pd.DataFrame(pit_df_data), hide_index=True, use_container_width=True)
+
+        with tab_team:
+            st.subheader(f"{selected_team} 通算成績")
+            my_players = [p for p, _ in batters_to_show]
+            
+            t_ab = sum(p.batting.AB for p in my_players)
+            t_h = sum(p.batting.H for p in my_players)
+            t_hr = sum(p.batting.HR for p in my_players)
+            t_avg = t_h / t_ab if t_ab > 0 else 0.0
+            
+            t_er = sum(p.pitching.ER for p in pitchers_list)
+            t_outs = sum(p.pitching.outs for p in pitchers_list)
+            t_era = t_er * 27 / t_outs if t_outs > 0 else 0.0
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("チーム得点", t_data["runs_for"])
+            col2.metric("チーム打率", fmt_pct(t_avg))
+            col3.metric("チーム本塁打", t_hr)
+            
+            col4, col5, col6 = st.columns(3)
+            col4.metric("チーム失点", t_data["runs_against"])
+            col5.metric("チーム防御率", f"{t_era:.2f}")
 # ============================================================
 # ドラフト・設定UI
 # ============================================================
