@@ -918,33 +918,34 @@ def at_bat_probabilities(batter, pitcher, game_outs):
     return step1_probs, pitch_name
 
 def resolve_statcast_in_play(batter, pitcher, defense):
-    gb_prob = 0.45; fb_prob = 0.25; ld_prob = 0.20; pu_prob = 0.10
+    # ▼ 修正①：平均的な投手（能力50）が打たせて取れるように、基準を「アウトになりやすい打球」へ変更
+    gb_prob = 0.48  # ゴロ（少し増）
+    fb_prob = 0.25  # フライ
+    ld_prob = 0.16  # ライナー（ヒットになりやすいので減）
+    pu_prob = 0.11  # ポップフライ（少し増）
     
-    # ====================================================
-    # ▼ 打者の能力による補正
-    # ====================================================
-    if batter.power > 65: fb_prob += 0.05; gb_prob -= 0.05
-    if getattr(batter, 'contact', 50) > 65: ld_prob += 0.05; pu_prob -= 0.05
+    # ▼ 打者の能力補正（基準50からの差分で計算）
+    b_pow_diff = batter.power - 50.0
+    if b_pow_diff > 0:
+        fb_prob += b_pow_diff * 0.0015; gb_prob -= b_pow_diff * 0.0015
+        
+    b_con_diff = getattr(batter, 'contact', 50.0) - 50.0
+    if b_con_diff > 0:
+        ld_prob += b_con_diff * 0.0015; pu_prob -= b_con_diff * 0.0015
 
-    # ====================================================
-    # ▼ 投手の能力による補正（ここが追加部分！）
-    # ====================================================
+    # ▼ 修正②：投手の能力補正（「55以上」という制限を撤廃し、50を基準に全投手に影響させる！）
     p_pow = getattr(pitcher, 'pitch_power_base', 50.0)
     p_ctrl = pitcher.control
 
-    if p_ctrl > 55.0:
-        # 制球が高いと、低めに集めて「ゴロ」を打たせる（鋭い打球が減る）
-        bonus = (p_ctrl - 55.0) * 0.0025
-        gb_prob += bonus
-        ld_prob -= bonus / 2
-        fb_prob -= bonus / 2
+    # 制球力によるゴロ誘導（50より高ければゴロ増・ライナー減。低いと痛打ライナーを打たれやすくなる）
+    ctrl_diff = p_ctrl - 50.0
+    gb_prob += ctrl_diff * 0.0020
+    ld_prob -= ctrl_diff * 0.0020
 
-    if p_pow > 55.0:
-        # 球威が高いと、力で押し込んで「ポップフライ」にする（鋭い打球が減る）
-        bonus = (p_pow - 55.0) * 0.0025
-        pu_prob += bonus
-        ld_prob -= bonus / 2
-        fb_prob -= bonus / 2
+    # 球威によるポップフライ誘導（50より高ければポップフライ増・フライ減。低いと外野まで運ばれる）
+    pow_diff = p_pow - 50.0
+    pu_prob += pow_diff * 0.0020
+    fb_prob -= pow_diff * 0.0020
 
     # 確率がマイナスにならないようにガード
     gb_prob = max(0.05, gb_prob)
@@ -968,22 +969,19 @@ def resolve_statcast_in_play(batter, pitcher, defense):
     outcome = "out"
     
     if batted_type == "GB":
-        base_reach = 0.75
+        base_reach = 0.76  # 修正③：野手がゴロを処理できる確率をほんの少し底上げ
         reach_prob = 0.35 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.006, 0.40, 0.95)
         if random.random() > reach_prob:
-            # ▼ 修正：ゴロが1・3塁線を抜けて二塁打になる確率を 20% → 10% に減少
             outcome = "double" if pos in ["1B", "3B"] and random.random() < 0.10 else "single"
         else:
             err_prob = 0.20 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
             outcome = "error" if random.random() < err_prob else "out"
             
     elif batted_type == "FB":
-        # ▼ 修正：パワー70までは二次関数で伸び、70以降は傾斜を緩やかにする
         if batter.power <= 70.0:
             diff = max(0.0, batter.power - 40.0)
             hr_prob = (diff * 0.004) + ((diff ** 2) * 0.00015)
         else:
-            # パワー70の時の確率(25.5%)をベースに、超過分は緩やかに(一次関数で)加算する
             excess = batter.power - 70.0
             hr_prob = 0.255 + (excess * 0.006)
             
@@ -995,7 +993,6 @@ def resolve_statcast_in_play(batter, pitcher, defense):
             base_reach = 0.85
             reach_prob = 0.30 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.005, 0.40, 0.99)
             if random.random() > reach_prob:
-                # ▼ 修正：外野に落ちたフライが二塁打になる確率を 50% → 30% に減少
                 outcome = random.choices(["single", "double", "triple"], weights=[0.65, 0.30, 0.05])[0]
             else:
                 err_prob = 0.10 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
@@ -1005,7 +1002,6 @@ def resolve_statcast_in_play(batter, pitcher, defense):
         base_reach = 0.30
         reach_prob = 0.10 if ability == 0.0 else clamp(base_reach + (ability - 55.0)*0.005, 0.10, 0.60)
         if random.random() > reach_prob:
-            # ▼ 修正：外野を抜けるライナーが二塁打になる確率を 40% → 25% に減少
             outcome = random.choices(["single", "double", "triple"], weights=[0.70, 0.25, 0.05])[0]
         else:
             err_prob = 0.15 if ability == 0.0 else clamp(base_err * (1.0 + (55.0 - ability)/40.0), base_err*0.2, base_err*3.0)
