@@ -876,14 +876,13 @@ def at_bat_probabilities(batter, pitcher, game_outs):
 
     contact_penalty = 0.0
     if batter.contact < 45.0:
-        effective_contact = max(40.0, batter.contact)
-        diff = 45.0 - effective_contact
+        # ▼ ストッパーを撤廃。低ければ低いほど無限に三振率が跳ね上がる！
+        diff = 45.0 - batter.contact
         contact_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
     power_penalty = 0.0
-    if batter.power < 50.0:
-        effective_power = max(40.0, batter.power)
-        diff = 50.0 - effective_power
+    if batter.power < 60.0:
+        diff = 60.0 - batter.power
         power_penalty = (diff * 0.4) + ((diff ** 2) * 0.01)
 
     pitch_variety = len(pitcher.pitches)
